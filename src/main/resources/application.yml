@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: huecko-backend
+
+  # --- Postgres: usuarios, grupos y membresías (datos relacionales) ---
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:huecko}
+    username: ${POSTGRES_USER:huecko}
+    password: ${POSTGRES_PASSWORD:huecko}
+  jpa:
+    hibernate:
+      # `update` mientras el modelo se mueve. Antes de desplegar hay que pasar a
+      # `validate` y llevar el esquema con Flyway o Liquibase.
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # --- Mongo: bloques de horario (esquema flexible por RF-01…RF-04) ---
+  data:
+    mongodb:
+      uri: mongodb://${MONGO_USER:huecko}:${MONGO_PASSWORD:huecko}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/${MONGO_DB:huecko}?authSource=admin
+      auto-index-creation: true
+
+  jackson:
+    # Instant/LocalDate/LocalTime como texto ISO, no como número.
+    serialization:
+      write-dates-as-timestamps: false
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+# El frontend consulta `${VITE_API_URL}/actuator/health`, y VITE_API_URL es
+# `/api`. Sin mover la base de actuator, esa comprobación daría 404.
+management:
+  endpoints:
+    web:
+      base-path: /api/actuator
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+huecko:
+  jwt:
+    secret: ${HUECKO_JWT_SECRET:cambia-esta-clave-de-desarrollo-huecko-2026-min-32-chars}
+    expiration-minutes: ${HUECKO_JWT_EXPIRATION_MINUTES:720}
+  cors:
+    allowed-origins: ${HUECKO_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  # Carga de datos de demo al arrancar. Idempotente: si el usuario demo ya
+  # existe no vuelve a insertar nada.
+  seed:
+    enabled: true
+
+logging:
+  level:
+    com.huecko.backend: DEBUG
