@@ -1,0 +1,14 @@
+# Normaliza los finales de linea en el repositorio.
+# Sin esto, en Windows (core.autocrlf=true) `mvnw` puede acabar con CRLF en el
+# arbol de trabajo y dejar de ejecutarse en Linux y macOS: el shell interpreta
+# el \r como parte del interprete y falla con "bad interpreter".
+* text=auto
+
+# El wrapper de Unix SIEMPRE con LF, aunque se edite desde Windows.
+mvnw       text eol=lf
+*.sh       text eol=lf
+
+# Los scripts de Windows SIEMPRE con CRLF.
+mvnw.cmd   text eol=crlf
+*.cmd      text eol=crlf
+*.bat      text eol=crlf
