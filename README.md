@@ -68,8 +68,11 @@ fueran JPA y el arranque falla.
 | Herramienta | Versión |
 | --- | --- |
 | JDK | 17 o superior |
-| Maven | 3.9+ |
 | Docker + Docker Compose | cualquiera reciente |
+
+**Maven no hace falta instalarlo.** El repositorio trae el Maven Wrapper
+(`mvnw` / `mvnw.cmd`), que descarga la versión correcta la primera vez y la
+reutiliza después. Por eso todos los comandos de abajo usan `./mvnw` y no `mvn`.
 
 ### 1. Variables de entorno
 
@@ -93,7 +96,7 @@ de cero: `docker compose down -v`.
 ### 3. Arrancar la API
 
 ```bash
-mvn spring-boot:run
+./mvnw spring-boot:run          # en PowerShell: .\mvnw.cmd spring-boot:run
 ```
 
 Queda escuchando en `http://localhost:8080`. Comprobación rápida:
