@@ -58,6 +58,11 @@ fueran JPA y el arranque falla.
 ---
 ## ⚙️ Instalación y Configuración
 
+> 📖 **¿Partes de cero?** [`docs/PUESTA_EN_MARCHA.md`](docs/PUESTA_EN_MARCHA.md)
+> es el manual paso a paso: cómo instalar JDK, Maven y Docker en una máquina
+> donde no hay nada, cómo probar el servicio junto al frontend y qué hacer
+> cuando algo falla. Lo de abajo es el resumen para quien ya tiene el entorno.
+
 ### Requisitos
 
 | Herramienta | Versión |
