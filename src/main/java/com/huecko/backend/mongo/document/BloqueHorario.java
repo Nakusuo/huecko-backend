@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -20,6 +21,7 @@ import java.time.LocalTime;
  * nace en estado BORRADOR hasta que el usuario lo confirma (RF-03).
  */
 @Document(collection = "bloques_horario")
+@CompoundIndex(name = "idx_usuario_estado", def = "{'usuarioId': 1, 'estado': 1}")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,7 +37,7 @@ public class BloqueHorario {
     private String id;
 
     // UUID del usuario en Postgres — el "join" entre ambas bases se hace por este campo
-    @Indexed
+    @Indexed(name = "idx_usuario")
     private String usuarioId;
 
     private Tipo tipo;
@@ -46,10 +48,23 @@ public class BloqueHorario {
     // Solo aplica si tipo = PUNTUAL
     private LocalDate fecha;
 
+    /**
+     * Último día de un bloque puntual que se repite varios días seguidos.
+     * Nulo = el bloque dura solo `fecha`.
+     */
+    private LocalDate fechaFin;
+
     private LocalTime horaInicio;
     private LocalTime horaFin;
 
+    /** Título que escribe el usuario ("Cálculo II", "Turno en la tienda"). */
     private String etiqueta;
+
+    /** Categoría del bloque: Clase, Trabajo, Personal… Es distinta del título. */
+    private String categoria;
+
+    /** Color con el que se pinta el bloque en la rejilla (formato CSS, p. ej. "#7C3AED"). */
+    private String color;
 
     private Fuente fuente;
 
