@@ -1,0 +1,52 @@
+# Infraestructura local de Huecko: las dos bases del modelo híbrido.
+#
+#   docker compose up -d
+#
+# Los datos de demo NO se cargan aquí sino desde la aplicación
+# (DemoDataSeeder, perfil `dev`). El motivo: el hash BCrypt de la contraseña
+# y el UUID que enlaza `usuarios` (Postgres) con `bloques_horario` (Mongo)
+# tienen que generarse de forma coherente entre ambas bases, y un .sql y un
+# .js independientes no pueden coordinarse entre sí.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: huecko-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-huecko}
+      POSTGRES_USER: ${POSTGRES_USER:-huecko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-huecko}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - huecko-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-huecko} -d ${POSTGRES_DB:-huecko}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    container_name: huecko-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-huecko}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-huecko}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-huecko}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - huecko-mongo-data:/data/db
+      # Solo se ejecuta la primera vez, con el volumen vacío. Crea la colección
+      # y sus índices; los documentos los inserta el seeder de la aplicación.
+      - ./docker/mongo/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  huecko-postgres-data:
+  huecko-mongo-data:
