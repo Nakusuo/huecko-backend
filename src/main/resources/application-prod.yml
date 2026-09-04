@@ -1,0 +1,13 @@
+# Perfil de despliegue: sin datos de demo y sin que Hibernate toque el esquema.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+huecko:
+  seed:
+    enabled: false
+
+logging:
+  level:
+    com.huecko.backend: INFO
