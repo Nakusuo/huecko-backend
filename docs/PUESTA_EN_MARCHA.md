@@ -10,14 +10,18 @@ Tiempo aproximado la primera vez: 30–40 minutos, casi todo descargas.
 
 ## 0. Qué falta instalar
 
-`huecko-backend` es un proyecto Java con dos bases de datos. Hacen falta tres
+`huecko-backend` es un proyecto Java con dos bases de datos. Hacen falta dos
 cosas, y ninguna viene con Windows:
 
 | Herramienta | Para qué | Versión |
 | --- | --- | --- |
 | **JDK 17+** | Compilar y ejecutar la aplicación | 17 o superior (LTS) |
-| **Maven 3.9+** | Descargar dependencias y arrancar la app | 3.9 o superior |
 | **Docker Desktop** | Levantar Postgres y Mongo sin instalarlos a mano | cualquiera reciente |
+
+> **Maven no está en la lista a propósito.** El repositorio trae el Maven
+> Wrapper (`mvnw` / `mvnw.cmd`): la primera vez que lo ejecutas descarga la
+> versión correcta de Maven en `~/.m2/wrapper` y la reutiliza. Por eso todos
+> los comandos de esta guía usan `.\mvnw.cmd` y no `mvn`.
 
 > ¿Por qué Docker y no instalar Postgres y Mongo directamente? Porque así las
 > dos bases se levantan con un solo comando, con la misma versión para todo el
@@ -35,36 +39,36 @@ administrador) y ejecuta:
 
 ```powershell
 winget install --id EclipseAdoptium.Temurin.17.JDK -e
-winget install --id Apache.Maven -e
 winget install --id Docker.DockerDesktop -e
 ```
 
 Cada uno tarda unos minutos. Docker Desktop pedirá reiniciar el equipo: hazlo
 antes de seguir.
 
+> No busques Maven en `winget`: **no está en el catálogo**. `winget install
+> --id Apache.Maven` falla sin instalar nada. No hace falta, para eso está el
+> wrapper.
+
 ### Opción B — instaladores manuales
 
 | Herramienta | Descarga |
 | --- | --- |
 | JDK 17 (Temurin) | https://adoptium.net/temurin/releases/?version=17 |
-| Maven | https://maven.apache.org/download.cgi (binary zip) |
 | Docker Desktop | https://www.docker.com/products/docker-desktop/ |
-
-Con Maven descargado a mano hay que descomprimirlo y añadir su carpeta `bin` al
-`PATH` manualmente. Por eso es preferible la opción A.
 
 ### Comprobar que quedó bien
 
-**Cierra y vuelve a abrir la terminal** (el `PATH` no se actualiza en las
-ventanas que ya estaban abiertas) y ejecuta:
+**Cierra y vuelve a abrir la terminal.** Esto no es opcional: Windows entrega la
+lista del `PATH` a cada proceso *cuando arranca*, así que una ventana abierta
+antes de instalar sigue sin ver los programas nuevos por mucho que se
+reinstalen. Ya en una ventana nueva:
 
 ```powershell
 java -version
-mvn -v
 docker --version
 ```
 
-Las tres deben responder con un número de versión. Si alguna dice *"no se
+Las dos deben responder con un número de versión. Si alguna dice *"no se
 reconoce como un comando"*, revisa el apartado 7.
 
 Además, **Docker Desktop tiene que estar abierto y en marcha** (icono de la
@@ -104,11 +108,11 @@ seguirán ahí. Para empezar completamente de cero, `docker compose down -v` (la
 En la misma carpeta:
 
 ```powershell
-mvn spring-boot:run
+.\mvnw.cmd spring-boot:run
 ```
 
-La primera vez Maven descarga todas las dependencias; tarda varios minutos y
-escupe mucho texto. Ya está listo cuando aparece algo como:
+La primera vez el wrapper descarga Maven y todas las dependencias; tarda varios
+minutos y escupe mucho texto. Ya está listo cuando aparece algo como:
 
 ```
 Started HueckoBackendApplication in 8.123 seconds
@@ -250,13 +254,16 @@ ni Postgres, ni Mongo.
 | Entras pero el horario sale vacío | Sesión antigua con un token de otro usuario. Cierra sesión y vuelve a entrar. |
 | Error de CORS en la consola del navegador | Estás apuntando `VITE_API_URL` directo a `http://localhost:8080` en vez de a `/api`. Usa `/api` y deja que el proxy de Vite haga el trabajo, o añade el origen a `HUECKO_CORS_ORIGINS` en `.env`. |
 | Maven falla descargando dependencias | Corta de red o proxy corporativo. Reintenta; Maven continúa donde lo dejó. |
+| `mvn` "no se reconoce como un comando" | Correcto: Maven no se instala en este proyecto. Usa `.\mvnw.cmd` (PowerShell) o `./mvnw` (bash). |
+| `mvnw.cmd` "no se reconoce" ejecutándolo desde `cmd.exe` | El sistema tiene `NoDefaultCurrentDirectoryInExePath=1`, que impide ejecutar programas del directorio actual sin ruta. Usa PowerShell con `.\mvnw.cmd`, o en `cmd` escribe la ruta completa. |
+| `The JAVA_HOME environment variable is not defined correctly` | La ventana es anterior a instalar el JDK. Ábrela de nuevo; el instalador ya deja `JAVA_HOME` definido a nivel de máquina. |
 
 ### Empezar de cero
 
 ```powershell
 docker compose down -v      # borra los contenedores Y los datos
 docker compose up -d        # bases vacías otra vez
-mvn spring-boot:run         # vuelve a sembrar los datos de demo
+.\mvnw.cmd spring-boot:run  # vuelve a sembrar los datos de demo
 ```
 
 ---
@@ -268,7 +275,7 @@ Los pasos 2 a 7 son idénticos; solo cambia la instalación.
 **macOS** (con [Homebrew](https://brew.sh)):
 
 ```bash
-brew install openjdk@17 maven
+brew install openjdk@17
 brew install --cask docker      # después hay que abrir Docker.app una vez
 ```
 
@@ -276,7 +283,7 @@ brew install --cask docker      # después hay que abrir Docker.app una vez
 
 ```bash
 sudo apt update
-sudo apt install openjdk-17-jdk maven
+sudo apt install openjdk-17-jdk
 # Docker Engine + plugin de Compose, según https://docs.docker.com/engine/install/
 ```
 
@@ -295,7 +302,7 @@ terminales:
 cd $HOME\Desktop\huecko-backend; docker compose up -d
 
 # 2) backend
-cd $HOME\Desktop\huecko-backend; mvn spring-boot:run
+cd $HOME\Desktop\huecko-backend; .\mvnw.cmd spring-boot:run
 
 # 3) frontend
 cd $HOME\Desktop\huecko-frontend; npm run dev
