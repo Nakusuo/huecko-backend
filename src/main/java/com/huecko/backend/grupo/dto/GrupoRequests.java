@@ -3,12 +3,13 @@ package com.huecko.backend.grupo.dto;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Los cuatro cuerpos de entrada del módulo de grupos, juntos por ser records de
- * tres líneas que solo se usan aquí. Separarlos en cuatro archivos añadiría
+ * Los cuerpos de entrada del módulo de grupos, juntos por ser records de
+ * tres líneas que solo se usan aquí. Separarlos en un archivo cada uno añadiría
  * ruido sin añadir información.
  */
 public final class GrupoRequests {
@@ -49,10 +50,17 @@ public final class GrupoRequests {
     ) {
     }
 
-    public record Unirse(
-            @NotBlank(message = "El código de invitación es obligatorio")
-            @Size(max = 20, message = "El código no puede superar los 20 caracteres")
-            String codigoInvitacion
+    /**
+     * Alta de un integrante ya existente en Huecko, por correo.
+     *
+     * Sustituye al código de invitación. Los integrantes se ponen al crear el
+     * grupo y se ajustan después desde la ficha de integrantes: no hay un
+     * camino en el que alguien se cuele solo conociendo una cadena de texto.
+     */
+    public record AgregarMiembro(
+            @NotBlank(message = "Hace falta el correo de quien entra")
+            @Email(message = "El correo no tiene un formato válido")
+            String email
     ) {
     }
 
