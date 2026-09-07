@@ -64,6 +64,19 @@ huecko:
     intervalo-cierre-ms: 60000
     # Margen para que el contexto termine de arrancar antes del primer barrido.
     retardo-inicial-ms: 10000
+  imprevistos:
+    # RF-17: "plazo corto". Una hora es el ejemplo del documento.
+    plazo-minutos: ${HUECKO_IMPREVISTOS_PLAZO_MINUTOS:60}
+    # RF-18: qué se aplica si nadie vota antes de que venza el plazo.
+    resultado-por-defecto: ${HUECKO_IMPREVISTOS_RESULTADO_DEFECTO:MANTENER}
+    # RF-18: el barrido que cierra y aplica. NO es el índice TTL de Mongo —
+    # ver el comentario de VotacionExpres. Cada 30 s porque los plazos aquí
+    # son cortos y un minuto de retraso se nota.
+    cierre-automatico: true
+    intervalo-cierre-ms: 30000
+    retardo-inicial-ms: 15000
+    # Días que se conserva una votación ya cerrada antes de que el TTL la borre.
+    dias-purga: 7
 
 logging:
   level:
