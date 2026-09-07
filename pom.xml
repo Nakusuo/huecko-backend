@@ -54,6 +54,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- RNF-05: STOMP sobre WebSocket para retrasos, votaciones y confirmaciones -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- /api/actuator/health, que el frontend consulta en checkBackendHealth() -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -64,6 +64,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        // RNF-05: el handshake de SockJS llega antes de que el
+                        // cliente haya podido mandar el frame CONNECT, así que
+                        // aquí todavía no hay JWT que validar. Quien autentica
+                        // y autoriza es SeguridadStompInterceptor, ya dentro
+                        // del protocolo STOMP.
+                        .requestMatchers("/api/ws/**").permitAll()
                         .requestMatchers("/api/actuator/health", "/api/actuator/health/**", "/api/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handler -> handler
