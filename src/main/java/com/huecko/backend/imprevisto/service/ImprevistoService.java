@@ -212,6 +212,13 @@ public class ImprevistoService {
      * Desempate: gana la opción más conservadora de las empatadas, en el orden
      * MANTENER, REAGENDAR, CANCELAR. Ante la duda el plan sigue en pie, porque
      * deshacer una cancelación cuesta más que reagendar después.
+     *
+     * <b>Ojo: el Módulo 3 desempata con otro criterio.</b> Allí
+     * ({@code SelectorVentanaGanadora}) gana la ventana más próxima, porque lo
+     * que se empata son horas equivalentes entre sí y la cercanía es lo que
+     * menos sorprende. Aquí las opciones tienen consecuencias de distinto peso,
+     * así que el criterio es el daño reversible. No son incoherentes:
+     * desempatan cosas distintas.
      */
     private VotacionExpres.Opcion masVotada(Map<String, VotacionExpres.Opcion> votos) {
         Map<VotacionExpres.Opcion, Integer> recuento = new EnumMap<>(VotacionExpres.Opcion.class);
