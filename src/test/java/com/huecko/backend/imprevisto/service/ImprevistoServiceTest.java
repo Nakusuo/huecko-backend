@@ -67,7 +67,7 @@ class ImprevistoServiceTest {
     @BeforeEach
     void preparar() {
         servicio = new ImprevistoService(votacionRepository, planRepository,
-                miembroGrupoRepository, usuarioRepository, new EvaluadorCriticidad(), notificador);
+                miembroGrupoRepository, usuarioRepository, new EvaluadorPorReglas(), notificador);
         ReflectionTestUtils.setField(servicio, "plazoMinutos", 60);
         ReflectionTestUtils.setField(servicio, "resultadoPorDefecto", VotacionExpres.Opcion.MANTENER);
         ReflectionTestUtils.setField(servicio, "diasPurga", 7);

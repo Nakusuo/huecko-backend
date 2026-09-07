@@ -65,6 +65,9 @@ huecko:
     # Margen para que el contexto termine de arrancar antes del primer barrido.
     retardo-inicial-ms: 10000
   imprevistos:
+    # RF-16: quién decide la criticidad. `reglas` es el MVP. El documento deja
+    # un LLM como mejora de fase 2: cuando exista, aquí se pondrá `ia`.
+    evaluador: ${HUECKO_IMPREVISTOS_EVALUADOR:reglas}
     # RF-17: "plazo corto". Una hora es el ejemplo del documento.
     plazo-minutos: ${HUECKO_IMPREVISTOS_PLAZO_MINUTOS:60}
     # RF-18: qué se aplica si nadie vota antes de que venza el plazo.
