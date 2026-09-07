@@ -66,7 +66,6 @@ class GrupoServiceTest {
     void elCreadorEsOrganizador() {
         Usuario ana = usuario("Ana");
         when(usuarioRepository.findById(ana.getId())).thenReturn(Optional.of(ana));
-        when(grupoRepository.existsByCodigoInvitacionIgnoreCase(anyString())).thenReturn(false);
         when(grupoRepository.save(any())).thenAnswer(i -> {
             Grupo g = i.getArgument(0);
             g.setId(GRUPO);
@@ -86,53 +85,6 @@ class GrupoServiceTest {
         assertThat(guardado.getValue().getDescripcion()).isEqualTo("con espacios");
         // Sin umbral explícito manda la unanimidad (HU-05).
         assertThat(guardado.getValue().getUmbralDisponibilidad()).isEqualTo(100);
-        assertThat(guardado.getValue().getCodigoInvitacion()).hasSize(8);
-    }
-
-    @Test
-    @DisplayName("El código de invitación evita los caracteres que se confunden al dictarlo")
-    void elCodigoNoUsaCaracteresAmbiguos() {
-        Usuario ana = usuario("Ana");
-        when(usuarioRepository.findById(ana.getId())).thenReturn(Optional.of(ana));
-        when(grupoRepository.existsByCodigoInvitacionIgnoreCase(anyString())).thenReturn(false);
-        when(grupoRepository.save(any())).thenAnswer(i -> {
-            Grupo g = i.getArgument(0);
-            g.setId(GRUPO);
-            return g;
-        });
-        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of());
-
-        for (int i = 0; i < 50; i++) {
-            servicio().crear(ana.getId(), new GrupoRequests.Crear("Amigos", null, 80));
-        }
-
-        ArgumentCaptor<Grupo> guardado = ArgumentCaptor.forClass(Grupo.class);
-        verify(grupoRepository, org.mockito.Mockito.atLeast(50)).save(guardado.capture());
-        assertThat(guardado.getAllValues())
-                .allSatisfy(g -> assertThat(g.getCodigoInvitacion()).doesNotContainAnyWhitespaces()
-                        .matches("[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}"));
-    }
-
-    @Test
-    @DisplayName("Si el código sorteado ya existe se vuelve a intentar en vez de reventar")
-    void reintentaAnteUnaColisionDeCodigo() {
-        Usuario ana = usuario("Ana");
-        when(usuarioRepository.findById(ana.getId())).thenReturn(Optional.of(ana));
-        // El primero choca, el segundo está libre.
-        when(grupoRepository.existsByCodigoInvitacionIgnoreCase(anyString()))
-                .thenReturn(true)
-                .thenReturn(false);
-        when(grupoRepository.save(any())).thenAnswer(i -> {
-            Grupo g = i.getArgument(0);
-            g.setId(GRUPO);
-            return g;
-        });
-        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of());
-
-        GrupoResponse r = servicio().crear(ana.getId(), new GrupoRequests.Crear("Amigos", null, null));
-
-        assertThat(r.codigoInvitacion()).hasSize(8);
-        verify(grupoRepository, org.mockito.Mockito.times(2)).existsByCodigoInvitacionIgnoreCase(anyString());
     }
 
     /* ------------------------------------------------------------------ *
@@ -179,48 +131,76 @@ class GrupoServiceTest {
     }
 
     /* ------------------------------------------------------------------ *
-     * Unirse
+     * Agregar integrantes
+     *
+     * Sustituye a las pruebas de "unirse por código". Lo que cambia no es solo
+     * el dato de entrada: antes cualquiera con la cadena entraba solo, ahora la
+     * entrada la decide el organizador, y eso hay que vigilarlo.
      * ------------------------------------------------------------------ */
 
     @Test
-    @DisplayName("Un código que no existe da 404")
-    void codigoInexistenteDa404() {
-        when(grupoRepository.findByCodigoInvitacionIgnoreCase("NOEXISTE")).thenReturn(Optional.empty());
+    @DisplayName("El organizador agrega por correo y quien entra queda de miembro raso")
+    void elOrganizadorAgregaPorCorreo() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        Usuario bruno = usuario("Bruno");
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, jefa.getUsuario().getId()))
+                .thenReturn(Optional.of(jefa));
+        when(usuarioRepository.findByEmailIgnoreCase("bruno@huecko.com")).thenReturn(Optional.of(bruno));
+        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, bruno.getId())).thenReturn(false);
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(jefa));
 
-        assertThatThrownBy(() -> servicio().unirse(UUID.randomUUID(), new GrupoRequests.Unirse("NOEXISTE")))
-                .isInstanceOf(NotFoundException.class);
+        servicio().agregarMiembro(jefa.getUsuario().getId(), GRUPO, "  bruno@huecko.com  ");
+
+        ArgumentCaptor<MiembroGrupo> nuevo = ArgumentCaptor.forClass(MiembroGrupo.class);
+        verify(miembroGrupoRepository).save(nuevo.capture());
+        assertThat(nuevo.getValue().getUsuario()).isEqualTo(bruno);
+        assertThat(nuevo.getValue().getRol()).isEqualTo(MiembroGrupo.Rol.MIEMBRO);
+        assertThat(nuevo.getValue().isEsImprescindible()).isFalse();
     }
 
     @Test
-    @DisplayName("Unirse dos veces no duplica la membresía ni da error: el resultado pedido ya se cumple")
-    void unirseDosVecesEsIdempotente() {
-        Usuario bruno = usuario("Bruno");
-        Grupo grupo = grupo();
-        when(grupoRepository.findByCodigoInvitacionIgnoreCase("HUECKO26")).thenReturn(Optional.of(grupo));
-        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, bruno.getId())).thenReturn(true);
-        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of());
+    @DisplayName("Un miembro raso NO puede meter gente en el grupo")
+    void elMiembroRasoNoAgrega() {
+        MiembroGrupo bruno = membresia(usuario("Bruno"), MiembroGrupo.Rol.MIEMBRO);
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, bruno.getUsuario().getId()))
+                .thenReturn(Optional.of(bruno));
 
-        servicio().unirse(bruno.getId(), new GrupoRequests.Unirse("HUECKO26"));
+        assertThatThrownBy(() ->
+                servicio().agregarMiembro(bruno.getUsuario().getId(), GRUPO, "carla@huecko.com"))
+                .isInstanceOf(ForbiddenException.class);
 
         verify(miembroGrupoRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("Quien se une entra de miembro raso, no de organizador")
-    void quienSeUneEsMiembroRaso() {
+    @DisplayName("Un correo sin cuenta en Huecko da 404 en vez de crear a nadie")
+    void elCorreoSinCuentaDa404() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, jefa.getUsuario().getId()))
+                .thenReturn(Optional.of(jefa));
+        when(usuarioRepository.findByEmailIgnoreCase("nadie@huecko.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                servicio().agregarMiembro(jefa.getUsuario().getId(), GRUPO, "nadie@huecko.com"))
+                .isInstanceOf(NotFoundException.class);
+
+        verify(miembroGrupoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Agregar dos veces a la misma persona no duplica la membresía")
+    void agregarDosVecesEsIdempotente() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
         Usuario bruno = usuario("Bruno");
-        Grupo grupo = grupo();
-        when(grupoRepository.findByCodigoInvitacionIgnoreCase("HUECKO26")).thenReturn(Optional.of(grupo));
-        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, bruno.getId())).thenReturn(false);
-        when(usuarioRepository.findById(bruno.getId())).thenReturn(Optional.of(bruno));
-        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of());
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, jefa.getUsuario().getId()))
+                .thenReturn(Optional.of(jefa));
+        when(usuarioRepository.findByEmailIgnoreCase("bruno@huecko.com")).thenReturn(Optional.of(bruno));
+        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, bruno.getId())).thenReturn(true);
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(jefa));
 
-        servicio().unirse(bruno.getId(), new GrupoRequests.Unirse("  HUECKO26  "));
+        servicio().agregarMiembro(jefa.getUsuario().getId(), GRUPO, "bruno@huecko.com");
 
-        ArgumentCaptor<MiembroGrupo> nuevo = ArgumentCaptor.forClass(MiembroGrupo.class);
-        verify(miembroGrupoRepository).save(nuevo.capture());
-        assertThat(nuevo.getValue().getRol()).isEqualTo(MiembroGrupo.Rol.MIEMBRO);
-        assertThat(nuevo.getValue().isEsImprescindible()).isFalse();
+        verify(miembroGrupoRepository, never()).save(any());
     }
 
     /* ------------------------------------------------------------------ *
@@ -371,7 +351,6 @@ class GrupoServiceTest {
         return Grupo.builder()
                 .id(GRUPO)
                 .nombre("Proyecto Integrador")
-                .codigoInvitacion("HUECKO26")
                 .umbralDisponibilidad(80)
                 .creadoPor(usuario("Ana"))
                 .build();

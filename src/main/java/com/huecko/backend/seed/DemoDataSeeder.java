@@ -52,8 +52,6 @@ public class DemoDataSeeder implements CommandLineRunner {
 
     private static final String EMAIL_COMPANERA = "diana.torres@huecko.com";
     private static final String NOMBRE_GRUPO = "Proyecto Integrador 2026-II";
-    /** Fijo, y no aleatorio, para poder probar "unirse por código" sin ir a mirar la base. */
-    private static final String CODIGO_GRUPO = "HUECKO26";
 
     private final UsuarioRepository usuarioRepository;
     private final GrupoRepository grupoRepository;
@@ -92,7 +90,6 @@ public class DemoDataSeeder implements CommandLineRunner {
                 .orElseGet(() -> grupoRepository.save(Grupo.builder()
                         .nombre(NOMBRE_GRUPO)
                         .descripcion("Coordinación de avances, sustentaciones y sesiones de trabajo.")
-                        .codigoInvitacion(CODIGO_GRUPO)
                         // 80 y no 100 a propósito: con unanimidad y dos horarios
                         // cargados el heatmap saldría casi vacío y no se vería
                         // para qué sirve poder bajar el umbral (RF-06).
