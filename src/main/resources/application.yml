@@ -57,6 +57,13 @@ huecko:
   # existe no vuelve a insertar nada.
   seed:
     enabled: true
+  planes:
+    # RF-10: barrido que cierra las votaciones con el plazo vencido y confirma
+    # la ventana ganadora. Se puede apagar en pruebas.
+    cierre-automatico: true
+    intervalo-cierre-ms: 60000
+    # Margen para que el contexto termine de arrancar antes del primer barrido.
+    retardo-inicial-ms: 10000
 
 logging:
   level:
