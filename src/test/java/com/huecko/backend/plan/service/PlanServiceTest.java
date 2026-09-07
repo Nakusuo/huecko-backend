@@ -8,6 +8,7 @@ import com.huecko.backend.grupo.dto.DisponibilidadResponse;
 import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.plan.dto.PlanRequests;
 import com.huecko.backend.plan.dto.PlanResponse;
+import com.huecko.backend.plan.event.PlanCerradoEvent;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.Plan;
@@ -27,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -63,6 +65,7 @@ class PlanServiceTest {
     @Mock private MiembroGrupoRepository miembroGrupoRepository;
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private GrupoService grupoService;
+    @Mock private ApplicationEventPublisher eventos;
 
     private PlanService servicio;
     private Usuario ana;
@@ -71,7 +74,7 @@ class PlanServiceTest {
     @BeforeEach
     void preparar() {
         servicio = new PlanService(planRepository, votoVentanaRepository, miembroGrupoRepository,
-                usuarioRepository, grupoService, new SelectorVentanaGanadora());
+                usuarioRepository, grupoService, new SelectorVentanaGanadora(), eventos);
         ana = usuario("Ana");
         bruno = usuario("Bruno");
 
@@ -333,6 +336,65 @@ class PlanServiceTest {
 
         assertThat(r.estado()).isEqualTo(Plan.Estado.CANCELADO);
         assertThat(r.ventanaConfirmadaId()).isNull();
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Notificar el cierre (RF-11)
+     * ------------------------------------------------------------------ */
+
+    @Test
+    @DisplayName("RF-11: al confirmar se publica el evento con la fecha y hora ganadoras")
+    void alConfirmarSePublicaElEvento() {
+        Plan plan = planAbierto(true);
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+
+        VentanaPlan ganadora = plan.getVentanas().get(1);
+        when(votoVentanaRepository.findByPlanId(PLAN)).thenReturn(List.of(
+                VotoVentana.builder().ventana(ganadora).usuario(ana).build()));
+
+        servicio.cerrarManualmente(ana.getId(), PLAN);
+
+        ArgumentCaptor<PlanCerradoEvent> captor = ArgumentCaptor.forClass(PlanCerradoEvent.class);
+        verify(eventos).publishEvent(captor.capture());
+
+        PlanCerradoEvent evento = captor.getValue();
+        assertThat(evento.confirmado()).isTrue();
+        assertThat(evento.grupoId()).isEqualTo(GRUPO);
+        assertThat(evento.planId()).isEqualTo(PLAN);
+        assertThat(evento.fecha()).isEqualTo(ganadora.getFecha());
+        assertThat(evento.horaInicio()).isEqualTo(ganadora.getHoraInicio());
+        assertThat(evento.horaFin()).isEqualTo(ganadora.getHoraFin());
+    }
+
+    @Test
+    @DisplayName("Un plan cancelado tambien avisa, para que el grupo deje de esperar")
+    void alCancelarTambienSePublica() {
+        Plan plan = planAbierto(true);
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+        when(votoVentanaRepository.findByPlanId(PLAN)).thenReturn(List.of());
+
+        servicio.cerrarManualmente(ana.getId(), PLAN);
+
+        ArgumentCaptor<PlanCerradoEvent> captor = ArgumentCaptor.forClass(PlanCerradoEvent.class);
+        verify(eventos).publishEvent(captor.capture());
+
+        assertThat(captor.getValue().confirmado()).isFalse();
+        assertThat(captor.getValue().fecha()).isNull();
+    }
+
+    @Test
+    @DisplayName("Un cierre rechazado no publica nada: nadie debe recibir un aviso falso")
+    void elCierreRechazadoNoPublica() {
+        Plan plan = planAbierto(true); // creado por Ana
+        planExiste(plan, bruno);
+        soyMiembro(bruno, MiembroGrupo.Rol.MIEMBRO);
+
+        assertThatThrownBy(() -> servicio.cerrarManualmente(bruno.getId(), PLAN))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(eventos, never()).publishEvent(any(PlanCerradoEvent.class));
     }
 
     @Test
