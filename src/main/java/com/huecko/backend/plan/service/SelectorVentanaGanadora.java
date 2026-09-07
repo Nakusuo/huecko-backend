@@ -31,6 +31,14 @@ public class SelectorVentanaGanadora {
      * A igualdad de votos gana la ventana más temprana. Cualquier criterio
      * sirve mientras sea determinista, y la más próxima es la que menos
      * sorprende: es la primera que el grupo vio en la lista.
+     *
+     * <b>Ojo: el Módulo 5 desempata con otro criterio.</b> Allí
+     * ({@code ImprevistoService.masVotada}) gana la opción más conservadora
+     * —MANTENER sobre REAGENDAR sobre CANCELAR— porque lo que se empata son
+     * consecuencias de distinto peso y deshacer una cancelación cuesta más que
+     * reagendar después. Aquí las opciones son horas equivalentes entre sí, así
+     * que el criterio es la cercanía. No son incoherentes: desempatan cosas
+     * distintas.
      */
     public Optional<VentanaPlan> elegir(List<VentanaPlan> ventanas, List<VotoVentana> votos) {
         if (ventanas.isEmpty() || votos.isEmpty()) {
