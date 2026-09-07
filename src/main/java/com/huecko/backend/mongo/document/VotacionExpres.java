@@ -72,6 +72,14 @@ public class VotacionExpres {
     /** Por qué se clasificó así, para poder explicárselo al grupo. */
     private String razonCriticidad;
 
+    /**
+     * Quién decidió la criticidad: las reglas, un modelo, o las reglas tras
+     * fallar el modelo. Se guarda y viaja a la interfaz porque un grupo tiene
+     * derecho a saber si la decisión que le abrió una votación la tomó una
+     * regla o una IA. Ver EvaluadorCriticidad.Origen.
+     */
+    private String origenCriticidad;
+
     private Estado estado;
 
     /** Voto de cada participante: usuarioId → opción. */
