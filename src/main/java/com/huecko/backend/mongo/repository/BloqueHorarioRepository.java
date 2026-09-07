@@ -12,4 +12,11 @@ public interface BloqueHorarioRepository extends MongoRepository<BloqueHorario, 
     List<BloqueHorario> findByUsuarioIdIn(List<String> usuarioIds);
 
     List<BloqueHorario> findByUsuarioIdAndEstado(String usuarioId, BloqueHorario.Estado estado);
+
+    /**
+     * Base del cruce del Módulo 2. Filtra por estado en la propia consulta para
+     * que los borradores de OCR nunca entren en el cálculo (RNF-06), y para no
+     * traerse a memoria bloques que se iban a descartar igual.
+     */
+    List<BloqueHorario> findByUsuarioIdInAndEstado(List<String> usuarioIds, BloqueHorario.Estado estado);
 }
