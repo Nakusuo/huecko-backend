@@ -33,13 +33,6 @@ public class Grupo {
     private String descripcion;
 
     /**
-     * Código con el que alguien se une al grupo (HU-05, RF-08 lo necesita para
-     * que el grupo tenga integrantes). Único: es la clave de búsqueda al unirse.
-     */
-    @Column(name = "codigo_invitacion", nullable = false, unique = true, length = 20)
-    private String codigoInvitacion;
-
-    /**
      * RF-06: porcentaje mínimo de integrantes libres para que una franja cuente
      * como hueco del grupo. 100 = unanimidad.
      */

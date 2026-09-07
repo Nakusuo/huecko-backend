@@ -460,7 +460,6 @@ class PlanServiceTest {
         return Grupo.builder()
                 .id(GRUPO)
                 .nombre("Proyecto Integrador")
-                .codigoInvitacion("HUECKO26")
                 .umbralDisponibilidad(80)
                 .creadoPor(ana)
                 .build();
