@@ -1,6 +1,8 @@
 package com.huecko.backend.horario.service;
 
 import com.huecko.backend.common.exception.BusinessException;
+import com.huecko.backend.common.exception.ForbiddenException;
+import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.horario.dto.BloqueHorarioRequest;
 import com.huecko.backend.horario.dto.BloqueHorarioResponse;
 import com.huecko.backend.mongo.document.BloqueHorario;
@@ -21,18 +23,29 @@ public class BloqueHorarioService {
     public BloqueHorarioResponse crear(String usuarioId, BloqueHorarioRequest req) {
         validarCoherenciaTipo(req);
 
+        // RF-02/RF-03: lo que llega marcado como OCR nace en BORRADOR y no cuenta
+        // como disponibilidad real hasta que el usuario lo confirma (RNF-06).
+        BloqueHorario.Fuente fuente = req.fuente() == null ? BloqueHorario.Fuente.MANUAL : req.fuente();
+        BloqueHorario.Estado estado = fuente == BloqueHorario.Fuente.OCR
+                ? BloqueHorario.Estado.BORRADOR
+                : BloqueHorario.Estado.CONFIRMADO;
+
+        Instant ahora = Instant.now();
         BloqueHorario bloque = BloqueHorario.builder()
                 .usuarioId(usuarioId)
                 .tipo(req.tipo())
                 .diaSemana(req.diaSemana())
                 .fecha(req.fecha())
+                .fechaFin(req.fechaFin())
                 .horaInicio(req.horaInicio())
                 .horaFin(req.horaFin())
                 .etiqueta(req.etiqueta())
-                .fuente(BloqueHorario.Fuente.MANUAL)
-                .estado(BloqueHorario.Estado.CONFIRMADO)
-                .creadoEn(Instant.now())
-                .actualizadoEn(Instant.now())
+                .categoria(req.categoria())
+                .color(req.color())
+                .fuente(fuente)
+                .estado(estado)
+                .creadoEn(ahora)
+                .actualizadoEn(ahora)
                 .build();
 
         return BloqueHorarioResponse.from(bloqueHorarioRepository.save(bloque));
@@ -46,10 +59,14 @@ public class BloqueHorarioService {
         bloque.setTipo(req.tipo());
         bloque.setDiaSemana(req.diaSemana());
         bloque.setFecha(req.fecha());
+        bloque.setFechaFin(req.fechaFin());
         bloque.setHoraInicio(req.horaInicio());
         bloque.setHoraFin(req.horaFin());
         bloque.setEtiqueta(req.etiqueta());
-        // Al editar/confirmar, un borrador de OCR pasa a confirmado (RF-03)
+        bloque.setCategoria(req.categoria());
+        bloque.setColor(req.color());
+        // Al editar/confirmar, un borrador de OCR pasa a confirmado (RF-03).
+        // La `fuente` original NO se toca: sigue siendo trazable que vino de OCR.
         bloque.setEstado(BloqueHorario.Estado.CONFIRMADO);
         bloque.setActualizadoEn(Instant.now());
 
@@ -80,11 +97,16 @@ public class BloqueHorarioService {
                 .toList();
     }
 
+    /**
+     * Un bloque que no existe da 404; uno que existe pero es de otra persona da 403.
+     * Antes ambos casos eran un 400 genérico, y la UI no podía distinguir
+     * "esto ya no está" de "esto no es tuyo".
+     */
     private BloqueHorario obtenerDelUsuarioOFallar(String usuarioId, String bloqueId) {
         BloqueHorario bloque = bloqueHorarioRepository.findById(bloqueId)
-                .orElseThrow(() -> new BusinessException("Bloque de horario no encontrado: " + bloqueId));
+                .orElseThrow(() -> new NotFoundException("Bloque de horario no encontrado: " + bloqueId));
         if (!bloque.getUsuarioId().equals(usuarioId)) {
-            throw new BusinessException("El bloque no pertenece al usuario autenticado");
+            throw new ForbiddenException("El bloque no pertenece al usuario autenticado");
         }
         return bloque;
     }
@@ -95,6 +117,11 @@ public class BloqueHorarioService {
         }
         if (req.tipo() == BloqueHorario.Tipo.PUNTUAL && req.fecha() == null) {
             throw new BusinessException("Un bloque puntual requiere fecha");
+        }
+        if (req.tipo() == BloqueHorario.Tipo.PUNTUAL
+                && req.fechaFin() != null
+                && req.fechaFin().isBefore(req.fecha())) {
+            throw new BusinessException("fechaFin no puede ser anterior a fecha");
         }
         if (!req.horaFin().isAfter(req.horaInicio())) {
             throw new BusinessException("horaFin debe ser posterior a horaInicio");
