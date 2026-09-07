@@ -26,6 +26,11 @@ public record EventoTiempoReal(
     public enum Tipo {
         /** RF-11: la votación cerró y hay fecha/hora confirmada. */
         PLAN_CONFIRMADO,
+        /**
+         * Fuera de RF-11. La votación cerró sin ningún voto y el plan quedó
+         * cancelado: sin este aviso el grupo seguiría esperando una fecha.
+         */
+        PLAN_CANCELADO,
         /** RF-13: alguien avisa que llegará tarde; el evento no cambia. */
         RETRASO_REPORTADO,
         /** RF-19: baja no crítica, solo se informa. */

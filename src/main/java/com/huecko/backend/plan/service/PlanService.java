@@ -9,6 +9,7 @@ import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.plan.dto.PlanRequests;
 import com.huecko.backend.plan.dto.PlanResponse;
 import com.huecko.backend.plan.dto.VentanaPlanResponse;
+import com.huecko.backend.plan.event.PlanCerradoEvent;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.Plan;
@@ -22,6 +23,7 @@ import com.huecko.backend.postgres.repository.VotoVentanaRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,8 @@ public class PlanService {
     private final UsuarioRepository usuarioRepository;
     private final GrupoService grupoService;
     private final SelectorVentanaGanadora selector;
+    /** RF-11. Publica, no notifica: el aviso sale tras el commit. Ver PlanCerradoEvent. */
+    private final ApplicationEventPublisher eventos;
 
     /* ------------------------------------------------------------------ *
      * Consulta
@@ -306,13 +310,16 @@ public class PlanService {
         if (ganadora.isEmpty()) {
             plan.setEstado(Plan.Estado.CANCELADO);
             log.info("Plan {} cancelado: la votación cerró sin ningún voto", plan.getId());
-            return;
+        } else {
+            plan.setEstado(Plan.Estado.CONFIRMADO);
+            plan.setVentanaConfirmada(ganadora.get());
+            log.info("Plan {} confirmado para el {} a las {}",
+                    plan.getId(), ganadora.get().getFecha(), ganadora.get().getHoraInicio());
         }
 
-        plan.setEstado(Plan.Estado.CONFIRMADO);
-        plan.setVentanaConfirmada(ganadora.get());
-        log.info("Plan {} confirmado para el {} a las {}",
-                plan.getId(), ganadora.get().getFecha(), ganadora.get().getHoraInicio());
+        // RF-11. Se publica aquí, en el único punto donde una votación termina,
+        // para que el cierre manual y el automático avisen exactamente igual.
+        eventos.publishEvent(PlanCerradoEvent.de(plan));
     }
 
     /* ------------------------------------------------------------------ *
