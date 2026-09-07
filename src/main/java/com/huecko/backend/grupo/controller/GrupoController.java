@@ -58,10 +58,18 @@ public class GrupoController {
         return ResponseEntity.ok(grupoService.actualizar(yo.id(), grupoId, request));
     }
 
-    @PostMapping("/unirse")
-    public ResponseEntity<GrupoResponse> unirse(@AuthenticationPrincipal UsuarioAutenticado yo,
-                                                @Valid @RequestBody GrupoRequests.Unirse request) {
-        return ResponseEntity.ok(grupoService.unirse(yo.id(), request));
+    /**
+     * Dar de alta a alguien en el grupo, por correo. Solo el organizador.
+     *
+     * Sustituye al antiguo `POST /grupos/unirse` por código de invitación: los
+     * integrantes se ponen al crear el grupo y se ajustan después desde aquí.
+     */
+    @PostMapping("/{grupoId}/miembros")
+    public ResponseEntity<GrupoResponse> agregarMiembro(
+            @AuthenticationPrincipal UsuarioAutenticado yo,
+            @PathVariable UUID grupoId,
+            @Valid @RequestBody GrupoRequests.AgregarMiembro request) {
+        return ResponseEntity.ok(grupoService.agregarMiembro(yo.id(), grupoId, request.email()));
     }
 
     @PatchMapping("/{grupoId}/miembros/{usuarioId}")

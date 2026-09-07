@@ -19,7 +19,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -34,16 +33,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class GrupoService {
-
-    /**
-     * Alfabeto del código de invitación: sin O/0 ni I/1/L, que son justo los
-     * que la gente confunde al dictarlo por chat o copiarlo a mano.
-     */
-    private static final String ALFABETO_CODIGO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    private static final int LONGITUD_CODIGO = 8;
-    private static final int INTENTOS_CODIGO = 10;
-
-    private static final SecureRandom ALEATORIO = new SecureRandom();
 
     private final GrupoRepository grupoRepository;
     private final MiembroGrupoRepository miembroGrupoRepository;
@@ -79,7 +68,6 @@ public class GrupoService {
                 .umbralDisponibilidad(req.umbralDisponibilidad() == null
                         ? Grupo.UMBRAL_POR_DEFECTO
                         : req.umbralDisponibilidad())
-                .codigoInvitacion(generarCodigoLibre())
                 .creadoPor(creador)
                 .build());
 
@@ -118,26 +106,35 @@ public class GrupoService {
      * Membresía
      * ------------------------------------------------------------------ */
 
+    /**
+     * Da de alta a alguien en el grupo, por correo. Solo el organizador.
+     *
+     * Sustituye al antiguo «unirse por código». Con el código, cualquiera que
+     * viera la cadena en una captura o en un chat entraba solo, y el grupo se
+     * enteraba después; aquí la entrada la decide siempre quien organiza.
+     *
+     * Es idempotente: volver a añadir a alguien que ya está devuelve el grupo
+     * tal cual. El resultado que pedía la llamada ya se cumple, y un 400
+     * obligaría a la interfaz a distinguir un caso que no le aporta nada.
+     */
     @Transactional
-    public GrupoResponse unirse(UUID usuarioId, GrupoRequests.Unirse req) {
-        Grupo grupo = grupoRepository.findByCodigoInvitacionIgnoreCase(req.codigoInvitacion().trim())
-                .orElseThrow(() -> new NotFoundException(
-                        "No hay ningún grupo con ese código de invitación"));
+    public GrupoResponse agregarMiembro(UUID usuarioId, UUID grupoId, String email) {
+        Grupo grupo = exigirOrganizador(usuarioId, grupoId).getGrupo();
 
-        if (miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(grupo.getId(), usuarioId)) {
-            // No es un error: el resultado que pedía ya se cumple. Devolver 400
-            // obligaría a la UI a distinguir un caso que no le aporta nada.
-            return GrupoResponse.from(grupo, miembrosDe(grupo.getId()));
+        Usuario nuevo = usuarioRepository.findByEmailIgnoreCase(email.trim())
+                .orElseThrow(() -> new NotFoundException(
+                        "No hay ninguna cuenta de Huecko con ese correo"));
+
+        if (!miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(grupoId, nuevo.getId())) {
+            miembroGrupoRepository.save(MiembroGrupo.builder()
+                    .grupo(grupo)
+                    .usuario(nuevo)
+                    .rol(MiembroGrupo.Rol.MIEMBRO)
+                    .esImprescindible(false)
+                    .build());
         }
 
-        miembroGrupoRepository.save(MiembroGrupo.builder()
-                .grupo(grupo)
-                .usuario(usuarioOFallar(usuarioId))
-                .rol(MiembroGrupo.Rol.MIEMBRO)
-                .esImprescindible(false)
-                .build());
-
-        return GrupoResponse.from(grupo, miembrosDe(grupo.getId()));
+        return GrupoResponse.from(grupo, miembrosDe(grupoId));
     }
 
     /** HU-14: marcar imprescindible o repartir la organización. Solo el organizador. */
@@ -270,28 +267,5 @@ public class GrupoService {
     private Usuario usuarioOFallar(UUID usuarioId) {
         return usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
-    }
-
-    /**
-     * Reintenta ante una colisión en vez de confiar en que 31^8 es mucho: la
-     * columna es única, así que sin esto una coincidencia sería un 500 delante
-     * de alguien que solo estaba creando un grupo.
-     */
-    private String generarCodigoLibre() {
-        for (int intento = 0; intento < INTENTOS_CODIGO; intento++) {
-            String codigo = generarCodigo();
-            if (!grupoRepository.existsByCodigoInvitacionIgnoreCase(codigo)) {
-                return codigo;
-            }
-        }
-        throw new BusinessException("No se pudo generar un código de invitación. Inténtalo de nuevo.");
-    }
-
-    private String generarCodigo() {
-        StringBuilder codigo = new StringBuilder(LONGITUD_CODIGO);
-        for (int i = 0; i < LONGITUD_CODIGO; i++) {
-            codigo.append(ALFABETO_CODIGO.charAt(ALEATORIO.nextInt(ALFABETO_CODIGO.length())));
-        }
-        return codigo.toString();
     }
 }
