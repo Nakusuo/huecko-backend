@@ -90,6 +90,8 @@ public class ImprevistoService {
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
 
         EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId);
+        log.debug("Criticidad de la ausencia en el plan {}: {} ({}) por {}",
+                planId, veredicto.criticidad(), veredicto.razon(), veredicto.origen());
         String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
 
         // RF-19: baja no crítica. Se informa y el plan sigue su curso.
@@ -98,7 +100,7 @@ public class ImprevistoService {
                     EventoTiempoReal.Tipo.AUSENCIA_REPORTADA,
                     datosDeAusencia(plan, usuario, motivoLimpio));
             return new ImprevistoDtos.ResultadoReporte(
-                    veredicto.criticidad(), veredicto.razon(), null);
+                    veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(), null);
         }
 
         // RF-17: baja crítica. Se abre la votación exprés.
@@ -111,6 +113,7 @@ public class ImprevistoService {
                 .motivo(motivoLimpio)
                 .criticidad(veredicto.criticidad())
                 .razonCriticidad(veredicto.razon())
+                .origenCriticidad(veredicto.origen().name())
                 .estado(VotacionExpres.Estado.ABIERTA)
                 .votos(new LinkedHashMap<>())
                 .miembrosDelGrupo((int) miembroGrupoRepository.countByGrupo_Id(plan.getGrupo().getId()))
@@ -123,7 +126,7 @@ public class ImprevistoService {
                 datosDeVotacion(plan, votacion));
 
         return new ImprevistoDtos.ResultadoReporte(
-                veredicto.criticidad(), veredicto.razon(),
+                veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(),
                 ImprevistoDtos.VotacionExpresResponse.from(votacion, usuarioId.toString()));
     }
 
