@@ -37,6 +37,8 @@ public final class ImprevistoDtos {
     public record ResultadoReporte(
             VotacionExpres.Criticidad criticidad,
             String razon,
+            /** REGLAS, IA o REGLAS_POR_FALLO. Ver EvaluadorCriticidad.Origen. */
+            String origen,
             VotacionExpresResponse votacion
     ) {
     }
@@ -48,6 +50,7 @@ public final class ImprevistoDtos {
             String motivo,
             VotacionExpres.Criticidad criticidad,
             String razonCriticidad,
+            String origenCriticidad,
             VotacionExpres.Estado estado,
             List<VotacionExpres.Opcion> opciones,
             /** Recuento por opción, para pintar la barra sin exponer quién votó qué. */
@@ -75,6 +78,7 @@ public final class ImprevistoDtos {
                     v.getMotivo(),
                     v.getCriticidad(),
                     v.getRazonCriticidad(),
+                    v.getOrigenCriticidad(),
                     v.getEstado(),
                     List.of(VotacionExpres.Opcion.values()),
                     recuento,
