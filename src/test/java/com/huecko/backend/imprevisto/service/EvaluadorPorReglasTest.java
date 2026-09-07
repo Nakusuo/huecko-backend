@@ -11,14 +11,18 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
+ * Las particularidades DE LAS REGLAS: el orden de los tres motivos y el texto
+ * concreto de cada razón. Lo que cualquier evaluador debe cumplir —incluida una
+ * futura implementación con IA— está en EvaluadorCriticidadContractTest.
+ *
  * RF-16. Son las reglas que deciden si una ausencia interrumpe el plan del
  * grupo o solo se anota, así que equivocarse aquí molesta en las dos
  * direcciones: o se abre una votación por cada baja, o no se abre cuando falta
  * quien traía las llaves.
  */
-class EvaluadorCriticidadTest {
+class EvaluadorPorReglasTest {
 
-    private final EvaluadorCriticidad evaluador = new EvaluadorCriticidad();
+    private final EvaluadorPorReglas evaluador = new EvaluadorPorReglas();
 
     private static final UUID ANA = UUID.randomUUID();
     private static final UUID BRUNO = UUID.randomUUID();
