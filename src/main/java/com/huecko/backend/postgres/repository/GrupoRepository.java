@@ -12,9 +12,7 @@ public interface GrupoRepository extends JpaRepository<Grupo, UUID> {
 
     Optional<Grupo> findByNombreIgnoreCase(String nombre);
 
-    Optional<Grupo> findByCodigoInvitacionIgnoreCase(String codigoInvitacion);
 
-    boolean existsByCodigoInvitacionIgnoreCase(String codigoInvitacion);
 
     /**
      * Grupos a los que pertenece un usuario, sea como organizador o como miembro.
