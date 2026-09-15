@@ -1,0 +1,1087 @@
+From 918fedce3e953a8a6ac66c609a138d2012393668 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 15 Sep 2026 22:10:36 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20Flyway=20en=20producci=C3=B3n,=20reprop?=
+ =?UTF-8?q?oner=20planes=20y=20avisos=20solo=20a=20miembros?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Esquema con Flyway (perfil prod)
+- V1__esquema_inicial.sql crea las tablas tal como las mapea Hibernate;
+  prod arranca con Flyway y `ddl-auto: validate`. Antes una base vacía
+  hacía fallar el arranque. En dev sigue mandando `update` (Flyway apagado).
+- Una base que ya tenía las tablas se adopta como versión 1.
+
+Reproponer tras un REAGENDAR
+- POST /api/planes/{id}/reproponer: nuevas ventanas (validadas contra el
+  umbral), nuevo plazo, votos de la ronda anterior borrados y el plan vuelve
+  a PROPUESTO. Solo quien lo propuso o un organizador.
+- Evento PLAN_REPROPUESTO tras el commit para que el grupo vote.
+- Antes un plan en EN_RECOORDINACION no podía salir de ese estado.
+- Al reproponer se descartan los retrasos de la fecha anterior, y quien avisó
+  de su ausencia en la ronda anterior puede volver a avisar en la nueva.
+
+Tiempo real
+- FiltroSalidaStomp vuelve a comprobar la pertenencia al grupo en cada aviso
+  que sale: quien sale o es sacado de un grupo deja de recibir sus avisos al
+  momento, sin esperar a reconectarse. SesionesStomp asocia cada sesión con
+  su usuario (CONNECT/DISCONNECT).
+
+Pruebas: 9 nuevas.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JDoAwT6P4ywvwkW8xr6yW3
+---
+ README.md                                     |  11 +-
+ pom.xml                                       |  10 ++
+ .../backend/config/WebSocketConfig.java       |  10 ++
+ .../imprevisto/service/ImprevistoService.java |   9 +-
+ .../repository/AlertaRetrasoRepository.java   |   3 +
+ .../repository/VotacionExpresRepository.java  |   8 +-
+ .../plan/controller/PlanController.java       |  11 ++
+ .../huecko/backend/plan/dto/PlanRequests.java |  18 +++
+ .../plan/event/PlanRepropuestoEvent.java      |  18 +++
+ .../backend/plan/service/PlanService.java     | 122 ++++++++++++++----
+ .../service/RetrasosAlReproponerListener.java |  35 +++++
+ .../backend/tiemporeal/FiltroSalidaStomp.java |  63 +++++++++
+ .../NotificacionesPlanListener.java           |  11 ++
+ .../tiemporeal/SeguridadStompInterceptor.java |  14 +-
+ .../backend/tiemporeal/SesionesStomp.java     |  34 +++++
+ .../tiemporeal/dto/EventoTiempoReal.java      |   4 +-
+ src/main/resources/application-prod.yml       |   9 ++
+ src/main/resources/application.yml            |  10 +-
+ .../db/migration/V1__esquema_inicial.sql      | 100 ++++++++++++++
+ .../service/ImprevistoServiceTest.java        |   3 +-
+ .../backend/plan/service/PlanServiceTest.java |  60 +++++++++
+ .../RetrasosAlReproponerListenerTest.java     |  27 ++++
+ .../tiemporeal/FiltroSalidaStompTest.java     |  77 +++++++++++
+ .../SeguridadStompInterceptorTest.java        |  23 +++-
+ 24 files changed, 656 insertions(+), 34 deletions(-)
+ create mode 100644 src/main/java/com/huecko/backend/plan/event/PlanRepropuestoEvent.java
+ create mode 100644 src/main/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListener.java
+ create mode 100644 src/main/java/com/huecko/backend/tiemporeal/FiltroSalidaStomp.java
+ create mode 100644 src/main/java/com/huecko/backend/tiemporeal/SesionesStomp.java
+ create mode 100644 src/main/resources/db/migration/V1__esquema_inicial.sql
+ create mode 100644 src/test/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListenerTest.java
+ create mode 100644 src/test/java/com/huecko/backend/tiemporeal/FiltroSalidaStompTest.java
+
+diff --git a/README.md b/README.md
+index 7d07dff..432636f 100644
+--- a/README.md
++++ b/README.md
+@@ -36,7 +36,9 @@ huecko-backend/
+ └── src/main/
+     ├── resources/
+     │   ├── application.yml       # Perfil por defecto (dev): con datos de demo
+-    │   └── application-prod.yml  # Sin seed, Hibernate en modo validate
++    │   ├── application-dev.yml   # Clave JWT de ejemplo y datos de demo (solo dev)
++    │   ├── application-prod.yml  # Sin seed, Flyway + Hibernate en modo validate
++    │   └── db/migration/         # Esquema de Postgres versionado (Flyway, perfil prod)
+     └── java/com/huecko/backend/
+         ├── HueckoBackendApplication.java
+         ├── auth/                 # Login, registro y JWT
+@@ -88,6 +90,13 @@ cualquier otro perfil, si `HUECKO_JWT_SECRET` no está definida la API no arranc
+ y con `prod` tampoco arranca si sigue siendo la clave de ejemplo: con ella
+ cualquiera podría firmar un token a nombre de otra persona.
+ 
++### Esquema de la base en producción
++
++En `dev` el esquema de Postgres lo crea Hibernate (`ddl-auto: update`). En `prod`
++lo crea **Flyway** con los scripts de `src/main/resources/db/migration` y Hibernate
++solo lo valida. Si cambias una entidad, añade una migración nueva (`V2__...sql`)
++con el cambio; nunca edites una que ya se aplicó.
++
+ ### 2. Levantar las bases
+ 
+ ```bash
+diff --git a/pom.xml b/pom.xml
+index 2b084ab..ac06b67 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -47,6 +47,16 @@
+             <artifactId>postgresql</artifactId>
+             <scope>runtime</scope>
+         </dependency>
++        <!-- Migraciones del esquema de Postgres (src/main/resources/db/migration).
++             Solo se ejecutan en el perfil prod; en dev manda ddl-auto: update. -->
++        <dependency>
++            <groupId>org.flywaydb</groupId>
++            <artifactId>flyway-core</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.flywaydb</groupId>
++            <artifactId>flyway-database-postgresql</artifactId>
++        </dependency>
+ 
+         <!-- Seguridad: BCrypt + cadena de filtros para el JWT propio -->
+         <dependency>
+diff --git a/src/main/java/com/huecko/backend/config/WebSocketConfig.java b/src/main/java/com/huecko/backend/config/WebSocketConfig.java
+index af19091..efae724 100644
+--- a/src/main/java/com/huecko/backend/config/WebSocketConfig.java
++++ b/src/main/java/com/huecko/backend/config/WebSocketConfig.java
+@@ -1,5 +1,6 @@
+ package com.huecko.backend.config;
+ 
++import com.huecko.backend.tiemporeal.FiltroSalidaStomp;
+ import com.huecko.backend.tiemporeal.SeguridadStompInterceptor;
+ import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.context.annotation.Configuration;
+@@ -32,11 +33,14 @@ import java.util.List;
+ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+ 
+     private final SeguridadStompInterceptor seguridadStompInterceptor;
++    private final FiltroSalidaStomp filtroSalidaStomp;
+     private final List<String> allowedOrigins;
+ 
+     public WebSocketConfig(SeguridadStompInterceptor seguridadStompInterceptor,
++                           FiltroSalidaStomp filtroSalidaStomp,
+                            @Value("${huecko.cors.allowed-origins}") String allowedOrigins) {
+         this.seguridadStompInterceptor = seguridadStompInterceptor;
++        this.filtroSalidaStomp = filtroSalidaStomp;
+         // Mismo origen permitido que en HTTP: dos listas separadas acabarían
+         // divergiendo y el fallo aparecería solo en producción.
+         this.allowedOrigins = Arrays.stream(allowedOrigins.split(","))
+@@ -65,4 +69,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+     public void configureClientInboundChannel(ChannelRegistration registration) {
+         registration.interceptors(seguridadStompInterceptor);
+     }
++
++    /** Vuelve a comprobar la pertenencia al grupo en cada aviso que sale. */
++    @Override
++    public void configureClientOutboundChannel(ChannelRegistration registration) {
++        registration.interceptors(filtroSalidaStomp);
++    }
+ }
+diff --git a/src/main/java/com/huecko/backend/imprevisto/service/ImprevistoService.java b/src/main/java/com/huecko/backend/imprevisto/service/ImprevistoService.java
+index bc4a571..a26112d 100644
+--- a/src/main/java/com/huecko/backend/imprevisto/service/ImprevistoService.java
++++ b/src/main/java/com/huecko/backend/imprevisto/service/ImprevistoService.java
+@@ -112,9 +112,12 @@ public class ImprevistoService {
+                     veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(), null);
+         }
+ 
+-        // Quien ya abrió una votación en este plan no puede abrir otra: sin esto,
+-        // tras un MANTENER la misma persona podía reabrirla una y otra vez.
+-        if (votacionRepository.existsByPlanIdAndUsuarioReporta(planId.toString(), usuarioId.toString())) {
++        // Quien ya abrió una votación en esta ronda del plan no puede abrir otra:
++        // sin esto, tras un MANTENER la misma persona podía reabrirla una y otra
++        // vez. La ronda empieza cuando se confirmó la fecha actual (`cerradoEn`).
++        Instant inicioDeRonda = plan.getCerradoEn() != null ? plan.getCerradoEn() : Instant.EPOCH;
++        if (votacionRepository.existsByPlanIdAndUsuarioReportaAndAbiertaEnAfter(
++                planId.toString(), usuarioId.toString(), inicioDeRonda)) {
+             throw new BusinessException("Ya reportaste tu ausencia en este plan");
+         }
+ 
+diff --git a/src/main/java/com/huecko/backend/mongo/repository/AlertaRetrasoRepository.java b/src/main/java/com/huecko/backend/mongo/repository/AlertaRetrasoRepository.java
+index b58eb5b..44c7020 100644
+--- a/src/main/java/com/huecko/backend/mongo/repository/AlertaRetrasoRepository.java
++++ b/src/main/java/com/huecko/backend/mongo/repository/AlertaRetrasoRepository.java
+@@ -14,6 +14,9 @@ public interface AlertaRetrasoRepository extends MongoRepository<AlertaRetraso,
+     /** Para corregir la estimación en vez de acumular avisos. */
+     Optional<AlertaRetraso> findByPlanIdAndUsuarioId(String planId, String usuarioId);
+ 
++    /** Todas las alertas de un plan. Se usa cuando el plan cambia de fecha. */
++    long deleteByPlanId(String planId);
++
+     /** Devuelve cuántas alertas borró: 0 si esa persona no había avisado. */
+     long deleteByPlanIdAndUsuarioId(String planId, String usuarioId);
+ }
+diff --git a/src/main/java/com/huecko/backend/mongo/repository/VotacionExpresRepository.java b/src/main/java/com/huecko/backend/mongo/repository/VotacionExpresRepository.java
+index 450cbe3..a8a7c8b 100644
+--- a/src/main/java/com/huecko/backend/mongo/repository/VotacionExpresRepository.java
++++ b/src/main/java/com/huecko/backend/mongo/repository/VotacionExpresRepository.java
+@@ -13,8 +13,12 @@ public interface VotacionExpresRepository extends MongoRepository<VotacionExpres
+ 
+     List<VotacionExpres> findByPlanIdOrderByAbiertaEnDesc(String planId);
+ 
+-    /** Si esa persona ya abrió alguna votación exprés en el plan (abierta o cerrada). */
+-    boolean existsByPlanIdAndUsuarioReporta(String planId, String usuarioReporta);
++    /**
++     * Si esa persona ya abrió una votación exprés en el plan desde `desde`
++     * (abierta o cerrada). Se acota a la ronda actual: tras reproponer fechas,
++     * quien avisó en la ronda anterior puede volver a avisar de la nueva.
++     */
++    boolean existsByPlanIdAndUsuarioReportaAndAbiertaEnAfter(String planId, String usuarioReporta, Instant desde);
+ 
+     /**
+      * RF-18: las que hay que cerrar. El planificador las busca por plazo, no
+diff --git a/src/main/java/com/huecko/backend/plan/controller/PlanController.java b/src/main/java/com/huecko/backend/plan/controller/PlanController.java
+index e2f24e8..17c8399 100644
+--- a/src/main/java/com/huecko/backend/plan/controller/PlanController.java
++++ b/src/main/java/com/huecko/backend/plan/controller/PlanController.java
+@@ -78,4 +78,15 @@ public class PlanController {
+                                                @PathVariable UUID planId) {
+         return ResponseEntity.ok(planService.cerrarManualmente(yo.id(), planId));
+     }
++
++    /**
++     * Tras un REAGENDAR (Módulo 5): nuevas fechas para el mismo plan, que vuelve
++     * a votarse. Solo quien lo propuso o un organizador.
++     */
++    @PostMapping("/planes/{planId}/reproponer")
++    public ResponseEntity<PlanResponse> reproponer(@AuthenticationPrincipal UsuarioAutenticado yo,
++                                                   @PathVariable UUID planId,
++                                                   @Valid @RequestBody PlanRequests.Reproponer request) {
++        return ResponseEntity.ok(planService.reproponer(yo.id(), planId, request));
++    }
+ }
+diff --git a/src/main/java/com/huecko/backend/plan/dto/PlanRequests.java b/src/main/java/com/huecko/backend/plan/dto/PlanRequests.java
+index 5457ec4..6b3d273 100644
+--- a/src/main/java/com/huecko/backend/plan/dto/PlanRequests.java
++++ b/src/main/java/com/huecko/backend/plan/dto/PlanRequests.java
+@@ -44,6 +44,24 @@ public final class PlanRequests {
+     ) {
+     }
+ 
++    /**
++     * Nuevas fechas para un plan que la votación exprés mandó a re-coordinar
++     * (REAGENDAR). El título y el lugar se conservan: lo que cambia es cuándo.
++     */
++    public record Reproponer(
++            @NotNull(message = "El plazo de votación es obligatorio")
++            Instant plazoVotacion,
++
++            /** Si es nulo se mantiene el modo de voto que tenía el plan. */
++            Boolean votosMultiples,
++
++            @NotEmpty(message = "Hay que proponer al menos 2 ventanas de tiempo")
++            @Size(min = 2, max = 5, message = "Un plan se vota entre 2 y 5 ventanas de tiempo")
++            @Valid
++            List<@NotNull(message = "Hay una ventana vacía") Ventana> ventanas
++    ) {
++    }
++
+     /**
+      * Una opción de fecha y hora.
+      *
+diff --git a/src/main/java/com/huecko/backend/plan/event/PlanRepropuestoEvent.java b/src/main/java/com/huecko/backend/plan/event/PlanRepropuestoEvent.java
+new file mode 100644
+index 0000000..9c44b82
+--- /dev/null
++++ b/src/main/java/com/huecko/backend/plan/event/PlanRepropuestoEvent.java
+@@ -0,0 +1,18 @@
++package com.huecko.backend.plan.event;
++
++import java.time.Instant;
++import java.util.UUID;
++
++/**
++ * Un plan que estaba en re-coordinación vuelve a votarse con fechas nuevas.
++ *
++ * Igual que {@link PlanCerradoEvent}: se publica dentro de la transacción y el
++ * aviso sale después del commit, con los datos copiados y no con la entidad.
++ */
++public record PlanRepropuestoEvent(
++        UUID grupoId,
++        UUID planId,
++        String titulo,
++        Instant plazoVotacion
++) {
++}
+diff --git a/src/main/java/com/huecko/backend/plan/service/PlanService.java b/src/main/java/com/huecko/backend/plan/service/PlanService.java
+index 8b89d90..3290680 100644
+--- a/src/main/java/com/huecko/backend/plan/service/PlanService.java
++++ b/src/main/java/com/huecko/backend/plan/service/PlanService.java
+@@ -11,6 +11,7 @@ import com.huecko.backend.plan.dto.PlanRequests;
+ import com.huecko.backend.plan.dto.PlanResponse;
+ import com.huecko.backend.plan.dto.VentanaPlanResponse;
+ import com.huecko.backend.plan.event.PlanCerradoEvent;
++import com.huecko.backend.plan.event.PlanRepropuestoEvent;
+ import com.huecko.backend.postgres.entity.Grupo;
+ import com.huecko.backend.postgres.entity.MiembroGrupo;
+ import com.huecko.backend.postgres.entity.Plan;
+@@ -97,11 +98,7 @@ public class PlanService {
+                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
+ 
+         Instant ahora = Instant.now();
+-        if (req.plazoVotacion().isBefore(ahora.plusSeconds(MINUTOS_MINIMOS_DE_PLAZO * 60L))) {
+-            throw new BusinessException(
+-                    "El plazo de votación debe dejar al menos " + MINUTOS_MINIMOS_DE_PLAZO
+-                            + " minutos para votar");
+-        }
++        exigirPlazoSuficiente(req.plazoVotacion(), ahora);
+ 
+         Grupo grupo = miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(grupoId, usuarioId)
+                 .orElseThrow(() -> new NotFoundException("El grupo no existe o no perteneces a él"))
+@@ -119,21 +116,111 @@ public class PlanService {
+                 .build();
+ 
+         plan.setVentanas(construirVentanas(usuarioId, grupoId, plan, req.ventanas()));
++        exigirPlazoAntesDeLaPrimeraOpcion(req.plazoVotacion(), plan.getVentanas());
++
++        return aRespuesta(planRepository.save(plan), usuarioId);
++    }
+ 
+-        /* La votación tiene que terminar antes de que empiece la primera opción.
+-           Si no, el barrido cerraba después y confirmaba una fecha que ya había
+-           pasado (p. ej. plazo de 48 horas y una opción para mañana). */
+-        Instant primeraOpcion = plan.getVentanas().stream()
++    private void exigirPlazoSuficiente(Instant plazo, Instant ahora) {
++        if (plazo.isBefore(ahora.plusSeconds(MINUTOS_MINIMOS_DE_PLAZO * 60L))) {
++            throw new BusinessException(
++                    "El plazo de votación debe dejar al menos " + MINUTOS_MINIMOS_DE_PLAZO
++                            + " minutos para votar");
++        }
++    }
++
++    /**
++     * La votación tiene que terminar antes de que empiece la primera opción.
++     * Si no, el barrido cerraba después y confirmaba una fecha que ya había
++     * pasado (p. ej. plazo de 48 horas y una opción para mañana).
++     */
++    private void exigirPlazoAntesDeLaPrimeraOpcion(Instant plazo, List<VentanaPlan> ventanas) {
++        Instant primeraOpcion = ventanas.stream()
+                 .map(v -> ZonaHoraria.instante(v.getFecha(), v.getHoraInicio()))
+                 .min(Instant::compareTo)
+                 .orElseThrow();
+-        if (req.plazoVotacion().isAfter(primeraOpcion)) {
++        if (plazo.isAfter(primeraOpcion)) {
+             throw new BusinessException(
+                     "La votación debe cerrar antes de que empiece la primera opción. Elige un plazo más corto "
+                             + "o fechas más adelante.");
+         }
++    }
+ 
+-        return aRespuesta(planRepository.save(plan), usuarioId);
++    /* ------------------------------------------------------------------ *
++     * Reproponer (tras un REAGENDAR del Módulo 5)
++     * ------------------------------------------------------------------ */
++
++    /**
++     * Vuelve a someter a votación un plan en re-coordinación, con fechas nuevas.
++     *
++     * Hasta ahora un REAGENDAR dejaba el plan en EN_RECOORDINACION para
++     * siempre: votar y cerrar exigen PROPUESTO, y retrasos e imprevistos
++     * exigen CONFIRMADO, así que nada podía sacarlo de ahí.
++     *
++     * Se conserva el plan (título, lugar, quién lo propuso) y se reemplazan las
++     * ventanas: los votos de la ronda anterior hablaban de otras fechas y no
++     * dicen nada de las nuevas.
++     */
++    @Transactional
++    public PlanResponse reproponer(UUID usuarioId, UUID planId, PlanRequests.Reproponer req) {
++        planRepository.bloquearPorId(planId);
++        Plan plan = planConAcceso(usuarioId, planId);
++        exigirCreadorUOrganizador(plan, usuarioId,
++                "Solo quien propuso el plan o un organizador del grupo puede proponer nuevas fechas");
++
++        if (plan.getEstado() != Plan.Estado.EN_RECOORDINACION) {
++            throw new BusinessException("Solo se proponen fechas nuevas para un plan en re-coordinación");
++        }
++
++        Instant ahora = Instant.now();
++        exigirPlazoSuficiente(req.plazoVotacion(), ahora);
++
++        // Primero se validan las ventanas nuevas: si alguna no cumple el umbral
++        // no se ha tocado nada todavía.
++        UUID grupoId = plan.getGrupo().getId();
++        List<VentanaPlan> nuevas = construirVentanas(usuarioId, grupoId, plan, req.ventanas());
++        exigirPlazoAntesDeLaPrimeraOpcion(req.plazoVotacion(), nuevas);
++
++        /* El orden importa por las claves foráneas, y Hibernate ejecuta los
++           borrados de huérfanos ANTES que las actualizaciones al vaciar la
++           sesión. Por eso se vacía en tres pasos: soltar la ventana ganadora,
++           borrar los votos, y solo entonces quitar las ventanas viejas. */
++        plan.setVentanaConfirmada(null);
++        planRepository.flush();
++
++        votoVentanaRepository.deleteAll(votoVentanaRepository.findByPlanId(planId));
++        votoVentanaRepository.flush();
++
++        plan.getVentanas().clear();
++        planRepository.flush();
++
++        plan.getVentanas().addAll(nuevas);
++        plan.setPlazoVotacion(req.plazoVotacion());
++        if (req.votosMultiples() != null) {
++            plan.setVotosMultiples(req.votosMultiples());
++        }
++        plan.setEstado(Plan.Estado.PROPUESTO);
++        plan.setCerradoEn(null);
++
++        Plan guardado = planRepository.save(plan);
++        log.info("Plan {} vuelve a votación con {} ventanas nuevas", planId, nuevas.size());
++
++        eventos.publishEvent(new PlanRepropuestoEvent(
++                grupoId, planId, plan.getTitulo(), req.plazoVotacion()));
++
++        return aRespuesta(guardado, usuarioId);
++    }
++
++    private void exigirCreadorUOrganizador(Plan plan, UUID usuarioId, String mensaje) {
++        boolean esCreador = plan.getCreadoPor().getId().equals(usuarioId);
++        boolean esOrganizador = miembroGrupoRepository
++                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
++                .map(m -> m.getRol() == MiembroGrupo.Rol.ORGANIZADOR)
++                .orElse(false);
++
++        if (!esCreador && !esOrganizador) {
++            throw new ForbiddenException(mensaje);
++        }
+     }
+ 
+     /**
+@@ -301,17 +388,8 @@ public class PlanService {
+     public PlanResponse cerrarManualmente(UUID usuarioId, UUID planId) {
+         planRepository.bloquearPorId(planId);
+         Plan plan = planConAcceso(usuarioId, planId);
+-
+-        boolean esCreador = plan.getCreadoPor().getId().equals(usuarioId);
+-        boolean esOrganizador = miembroGrupoRepository
+-                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
+-                .map(m -> m.getRol() == MiembroGrupo.Rol.ORGANIZADOR)
+-                .orElse(false);
+-
+-        if (!esCreador && !esOrganizador) {
+-            throw new ForbiddenException(
+-                    "Solo quien propuso el plan o un organizador del grupo puede cerrar la votación");
+-        }
++        exigirCreadorUOrganizador(plan, usuarioId,
++                "Solo quien propuso el plan o un organizador del grupo puede cerrar la votación");
+         if (plan.getEstado() != Plan.Estado.PROPUESTO) {
+             throw new BusinessException("Esta votación ya estaba cerrada");
+         }
+diff --git a/src/main/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListener.java b/src/main/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListener.java
+new file mode 100644
+index 0000000..83987d4
+--- /dev/null
++++ b/src/main/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListener.java
+@@ -0,0 +1,35 @@
++package com.huecko.backend.retraso.service;
++
++import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
++import com.huecko.backend.plan.event.PlanRepropuestoEvent;
++import lombok.RequiredArgsConstructor;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.stereotype.Component;
++import org.springframework.transaction.event.TransactionPhase;
++import org.springframework.transaction.event.TransactionalEventListener;
++
++/**
++ * Un retraso se avisa respecto de una fecha concreta. Cuando el plan vuelve a
++ * votarse con fechas nuevas, los "llego 20 minutos tarde" de la fecha anterior
++ * ya no dicen nada, y seguían apareciendo en el resumen de puntualidad.
++ *
++ * Tras el commit, igual que los avisos: si la re-propuesta no se guarda, los
++ * retrasos siguen valiendo.
++ */
++@Component
++@RequiredArgsConstructor
++public class RetrasosAlReproponerListener {
++
++    private static final Logger log = LoggerFactory.getLogger(RetrasosAlReproponerListener.class);
++
++    private final AlertaRetrasoRepository alertaRepository;
++
++    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
++    public void alReproponer(PlanRepropuestoEvent evento) {
++        long borradas = alertaRepository.deleteByPlanId(evento.planId().toString());
++        if (borradas > 0) {
++            log.info("Plan {} con fechas nuevas: {} aviso(s) de retraso descartado(s)", evento.planId(), borradas);
++        }
++    }
++}
+diff --git a/src/main/java/com/huecko/backend/tiemporeal/FiltroSalidaStomp.java b/src/main/java/com/huecko/backend/tiemporeal/FiltroSalidaStomp.java
+new file mode 100644
+index 0000000..003f072
+--- /dev/null
++++ b/src/main/java/com/huecko/backend/tiemporeal/FiltroSalidaStomp.java
+@@ -0,0 +1,63 @@
++package com.huecko.backend.tiemporeal;
++
++import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
++import lombok.RequiredArgsConstructor;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.messaging.Message;
++import org.springframework.messaging.MessageChannel;
++import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
++import org.springframework.messaging.simp.SimpMessageType;
++import org.springframework.messaging.support.ChannelInterceptor;
++import org.springframework.stereotype.Component;
++
++import java.util.Map;
++import java.util.Optional;
++import java.util.UUID;
++
++/**
++ * Última comprobación antes de que un aviso de grupo salga hacia un cliente.
++ *
++ * La pertenencia al grupo se comprobaba solo al suscribirse. Quien salía o era
++ * sacado de un grupo conservaba su suscripción y seguía recibiendo retrasos,
++ * ausencias y votaciones de ese grupo hasta que se reconectaba. Aquí se vuelve
++ * a comprobar en cada envío, así que deja de recibirlos en el momento en que
++ * deja de ser miembro.
++ *
++ * El coste es una consulta por destinatario y aviso: los grupos son de unas 20
++ * personas (RNF-07) y los avisos salen de acciones humanas, no en ráfaga.
++ */
++@Component
++@RequiredArgsConstructor
++public class FiltroSalidaStomp implements ChannelInterceptor {
++
++    private static final Logger log = LoggerFactory.getLogger(FiltroSalidaStomp.class);
++
++    private final SesionesStomp sesiones;
++    private final MiembroGrupoRepository miembroGrupoRepository;
++
++    @Override
++    public Message<?> preSend(Message<?> message, MessageChannel channel) {
++        Map<String, Object> cabeceras = message.getHeaders();
++
++        if (SimpMessageHeaderAccessor.getMessageType(cabeceras) != SimpMessageType.MESSAGE) {
++            return message;
++        }
++
++        Optional<UUID> grupoId = Destinos.grupoDe(SimpMessageHeaderAccessor.getDestination(cabeceras));
++        String sesionId = SimpMessageHeaderAccessor.getSessionId(cabeceras);
++        if (grupoId.isEmpty() || sesionId == null) {
++            return message;
++        }
++
++        // Una sesión sin identidad registrada no debería tener suscripciones;
++        // si aparece, no se le entrega nada.
++        Optional<UUID> usuarioId = sesiones.usuarioDe(sesionId);
++        if (usuarioId.isEmpty()
++                || !miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(grupoId.get(), usuarioId.get())) {
++            log.debug("Aviso del grupo {} descartado para la sesión {}: ya no es miembro", grupoId.get(), sesionId);
++            return null;
++        }
++        return message;
++    }
++}
+diff --git a/src/main/java/com/huecko/backend/tiemporeal/NotificacionesPlanListener.java b/src/main/java/com/huecko/backend/tiemporeal/NotificacionesPlanListener.java
+index cbe9b3c..33a05b3 100644
+--- a/src/main/java/com/huecko/backend/tiemporeal/NotificacionesPlanListener.java
++++ b/src/main/java/com/huecko/backend/tiemporeal/NotificacionesPlanListener.java
+@@ -1,6 +1,7 @@
+ package com.huecko.backend.tiemporeal;
+ 
+ import com.huecko.backend.plan.event.PlanCerradoEvent;
++import com.huecko.backend.plan.event.PlanRepropuestoEvent;
+ import com.huecko.backend.tiemporeal.dto.EventoTiempoReal;
+ import lombok.RequiredArgsConstructor;
+ import org.springframework.stereotype.Component;
+@@ -50,4 +51,14 @@ public class NotificacionesPlanListener {
+         datos.put("motivo", "La votación cerró sin ningún voto");
+         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.PLAN_CANCELADO, datos);
+     }
++
++    /** Tras un REAGENDAR: el grupo tiene fechas nuevas que votar. */
++    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
++    public void alReproponer(PlanRepropuestoEvent evento) {
++        Map<String, Object> datos = new LinkedHashMap<>();
++        datos.put("planId", evento.planId().toString());
++        datos.put("titulo", evento.titulo());
++        datos.put("plazoVotacion", evento.plazoVotacion().toString());
++        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.PLAN_REPROPUESTO, datos);
++    }
+ }
+diff --git a/src/main/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptor.java b/src/main/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptor.java
+index ac80118..22ba89a 100644
+--- a/src/main/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptor.java
++++ b/src/main/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptor.java
+@@ -54,6 +54,7 @@ public class SeguridadStompInterceptor implements ChannelInterceptor {
+ 
+     private final JwtService jwtService;
+     private final MiembroGrupoRepository miembroGrupoRepository;
++    private final SesionesStomp sesiones;
+ 
+     @Override
+     public Message<?> preSend(Message<?> message, MessageChannel channel) {
+@@ -84,7 +85,13 @@ public class SeguridadStompInterceptor implements ChannelInterceptor {
+             case SUBSCRIBE -> {
+                 return autorizarSuscripcion(lectura) ? message : null;
+             }
+-            case UNSUBSCRIBE, DISCONNECT -> {
++            case UNSUBSCRIBE -> {
++                return message;
++            }
++            case DISCONNECT -> {
++                if (lectura.getSessionId() != null) {
++                    sesiones.olvidar(lectura.getSessionId());
++                }
+                 return message;
+             }
+             default -> throw new MessageDeliveryException("Comando no permitido: " + comando);
+@@ -105,6 +112,11 @@ public class SeguridadStompInterceptor implements ChannelInterceptor {
+         // UsuarioAutenticado, así nada aguas abajo tiene que distinguirlos.
+         accessor.setUser(new UsernamePasswordAuthenticationToken(
+                 usuario, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
++
++        // Para saber a quién va cada aviso al salir (ver FiltroSalidaStomp).
++        if (accessor.getSessionId() != null) {
++            sesiones.registrar(accessor.getSessionId(), usuario.id());
++        }
+     }
+ 
+     /**
+diff --git a/src/main/java/com/huecko/backend/tiemporeal/SesionesStomp.java b/src/main/java/com/huecko/backend/tiemporeal/SesionesStomp.java
+new file mode 100644
+index 0000000..7ebc59c
+--- /dev/null
++++ b/src/main/java/com/huecko/backend/tiemporeal/SesionesStomp.java
+@@ -0,0 +1,34 @@
++package com.huecko.backend.tiemporeal;
++
++import org.springframework.stereotype.Component;
++
++import java.util.Map;
++import java.util.Optional;
++import java.util.UUID;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Qué usuario hay detrás de cada sesión STOMP abierta.
++ *
++ * Los mensajes que el broker reparte a cada suscriptor solo llevan el id de la
++ * sesión, no el usuario. Este registro permite al {@link FiltroSalidaStomp}
++ * saber a quién va cada mensaje. Se rellena en el CONNECT y se vacía en el
++ * DISCONNECT (que Spring envía también cuando la conexión se corta sin avisar).
++ */
++@Component
++public class SesionesStomp {
++
++    private final Map<String, UUID> usuarioPorSesion = new ConcurrentHashMap<>();
++
++    public void registrar(String sesionId, UUID usuarioId) {
++        usuarioPorSesion.put(sesionId, usuarioId);
++    }
++
++    public void olvidar(String sesionId) {
++        usuarioPorSesion.remove(sesionId);
++    }
++
++    public Optional<UUID> usuarioDe(String sesionId) {
++        return Optional.ofNullable(usuarioPorSesion.get(sesionId));
++    }
++}
+diff --git a/src/main/java/com/huecko/backend/tiemporeal/dto/EventoTiempoReal.java b/src/main/java/com/huecko/backend/tiemporeal/dto/EventoTiempoReal.java
+index f538228..90f4ec9 100644
+--- a/src/main/java/com/huecko/backend/tiemporeal/dto/EventoTiempoReal.java
++++ b/src/main/java/com/huecko/backend/tiemporeal/dto/EventoTiempoReal.java
+@@ -38,7 +38,9 @@ public record EventoTiempoReal(
+         /** RF-17: baja crítica, se abre votación exprés. */
+         VOTACION_EXPRES_ABIERTA,
+         /** RF-17 y RF-18: la votación exprés terminó, por votos o por defecto. */
+-        VOTACION_EXPRES_CERRADA
++        VOTACION_EXPRES_CERRADA,
++        /** Tras un REAGENDAR, el plan vuelve a votarse con fechas nuevas. */
++        PLAN_REPROPUESTO
+     }
+ 
+     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {
+diff --git a/src/main/resources/application-prod.yml b/src/main/resources/application-prod.yml
+index 5d371eb..540bde5 100644
+--- a/src/main/resources/application-prod.yml
++++ b/src/main/resources/application-prod.yml
+@@ -3,6 +3,15 @@ spring:
+   jpa:
+     hibernate:
+       ddl-auto: validate
++  # El esquema lo crea y lo actualiza Flyway con db/migration/V*.sql antes de que
++  # Hibernate lo valide. Sin esto, una base vacía hacía fallar el arranque con
++  # "Schema-validation: missing table".
++  flyway:
++    enabled: true
++    # Una base que ya tenía las tablas (creadas antes con `update`) se adopta
++    # como versión 1 en vez de fallar por "esquema no vacío".
++    baseline-on-migrate: true
++    baseline-version: 1
+ 
+ huecko:
+   seed:
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+index b039fd6..f833da6 100644
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -12,8 +12,8 @@ spring:
+     password: ${POSTGRES_PASSWORD:huecko}
+   jpa:
+     hibernate:
+-      # `update` mientras el modelo se mueve. Antes de desplegar hay que pasar a
+-      # `validate` y llevar el esquema con Flyway o Liquibase.
++      # `update` en desarrollo, mientras el modelo se mueve. El perfil `prod`
++      # usa `validate` y el esquema lo crea Flyway (db/migration).
+       ddl-auto: update
+     open-in-view: false
+     properties:
+@@ -21,6 +21,12 @@ spring:
+         jdbc:
+           time_zone: UTC
+ 
++  # Flyway apagado por defecto: en desarrollo el esquema lo lleva Hibernate y una
++  # base ya creada con `update` no tiene historial de migraciones. Lo enciende
++  # application-prod.yml.
++  flyway:
++    enabled: false
++
+   # --- Mongo: bloques de horario (esquema flexible por RF-01…RF-04) ---
+   data:
+     mongodb:
+diff --git a/src/main/resources/db/migration/V1__esquema_inicial.sql b/src/main/resources/db/migration/V1__esquema_inicial.sql
+new file mode 100644
+index 0000000..2393151
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__esquema_inicial.sql
+@@ -0,0 +1,100 @@
++-- ---------------------------------------------------------------------------
++-- Esquema inicial de Postgres (usuarios, grupos, planes y votos).
++--
++-- Refleja las entidades de com.huecko.backend.postgres.entity tal como las
++-- mapea Hibernate 6 para PostgreSQL, porque el perfil `prod` arranca con
++-- `ddl-auto: validate`: si una columna falta o tiene otro tipo, no arranca.
++--
++-- Cualquier cambio en una entidad necesita una migración nueva (V2__..., V3__...).
++-- Nunca editar esta: Flyway guarda su checksum y rechaza el arranque si cambia.
++--
++-- Lo de Mongo (bloques de horario, retrasos, votaciones exprés) no pasa por
++-- aquí: sus colecciones e índices los crea Spring Data al arrancar.
++-- ---------------------------------------------------------------------------
++
++create table usuarios (
++    id            uuid                        not null,
++    nombre        varchar(120)                not null,
++    email         varchar(180)                not null,
++    password_hash varchar(255)                not null,
++    creado_en     timestamp(6) with time zone not null,
++    constraint pk_usuarios primary key (id),
++    constraint uk_usuarios_email unique (email)
++);
++
++create table grupos (
++    id                    uuid                        not null,
++    nombre                varchar(120)                not null,
++    descripcion           varchar(400),
++    umbral_disponibilidad integer                     not null,
++    creado_por            uuid                        not null,
++    creado_en             timestamp(6) with time zone not null,
++    constraint pk_grupos primary key (id),
++    constraint fk_grupos_creado_por foreign key (creado_por) references usuarios (id)
++);
++
++create table miembros_grupo (
++    grupo_id          uuid        not null,
++    usuario_id        uuid        not null,
++    rol               varchar(20) not null,
++    es_imprescindible boolean     not null,
++    constraint pk_miembros_grupo primary key (grupo_id, usuario_id),
++    constraint fk_miembros_grupo_grupo foreign key (grupo_id) references grupos (id),
++    constraint fk_miembros_grupo_usuario foreign key (usuario_id) references usuarios (id),
++    constraint ck_miembros_grupo_rol check (rol in ('ORGANIZADOR', 'MIEMBRO'))
++);
++
++-- "Mis grupos" se consulta por usuario; la clave primaria empieza por grupo.
++create index idx_miembros_grupo_usuario on miembros_grupo (usuario_id);
++
++create table planes (
++    id                    uuid                        not null,
++    grupo_id              uuid                        not null,
++    titulo                varchar(120)                not null,
++    lugar                 varchar(200),
++    creado_por            uuid                        not null,
++    plazo_votacion        timestamp(6) with time zone not null,
++    estado                varchar(20)                 not null,
++    votos_multiples       boolean                     not null,
++    ventana_confirmada_id uuid,
++    creado_en             timestamp(6) with time zone not null,
++    cerrado_en            timestamp(6) with time zone,
++    constraint pk_planes primary key (id),
++    constraint fk_planes_grupo foreign key (grupo_id) references grupos (id),
++    constraint fk_planes_creado_por foreign key (creado_por) references usuarios (id),
++    constraint ck_planes_estado check (estado in ('PROPUESTO', 'CONFIRMADO', 'CANCELADO', 'EN_RECOORDINACION'))
++);
++
++create index idx_planes_grupo on planes (grupo_id);
++-- El barrido de cierre (RF-10) busca por estado y plazo cada minuto.
++create index idx_planes_estado_plazo on planes (estado, plazo_votacion);
++
++create table ventanas_plan (
++    id                        uuid    not null,
++    plan_id                   uuid    not null,
++    fecha                     date    not null,
++    hora_inicio               time(6) not null,
++    hora_fin                  time(6) not null,
++    disponibilidad_porcentaje integer not null,
++    constraint pk_ventanas_plan primary key (id),
++    constraint fk_ventanas_plan_plan foreign key (plan_id) references planes (id)
++);
++
++create index idx_ventanas_plan_plan on ventanas_plan (plan_id);
++
++-- Referencia circular (un plan apunta a su ventana ganadora y la ventana a su
++-- plan): la clave foránea se añade cuando ya existen las dos tablas.
++alter table planes
++    add constraint fk_planes_ventana_confirmada
++        foreign key (ventana_confirmada_id) references ventanas_plan (id);
++
++create table votos_ventana (
++    ventana_id uuid                        not null,
++    usuario_id uuid                        not null,
++    creado_en  timestamp(6) with time zone not null,
++    constraint pk_votos_ventana primary key (ventana_id, usuario_id),
++    constraint fk_votos_ventana_ventana foreign key (ventana_id) references ventanas_plan (id),
++    constraint fk_votos_ventana_usuario foreign key (usuario_id) references usuarios (id)
++);
++
++create index idx_votos_ventana_usuario on votos_ventana (usuario_id);
+diff --git a/src/test/java/com/huecko/backend/imprevisto/service/ImprevistoServiceTest.java b/src/test/java/com/huecko/backend/imprevisto/service/ImprevistoServiceTest.java
+index 53fa544..7a2b887 100644
+--- a/src/test/java/com/huecko/backend/imprevisto/service/ImprevistoServiceTest.java
++++ b/src/test/java/com/huecko/backend/imprevisto/service/ImprevistoServiceTest.java
+@@ -303,7 +303,8 @@ class ImprevistoServiceTest {
+     void noSeReportaDosVeces() {
+         plan(Plan.Estado.CONFIRMADO, ana);
+         soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+-        when(votacionRepository.existsByPlanIdAndUsuarioReporta(PLAN.toString(), ana.getId().toString()))
++        when(votacionRepository.existsByPlanIdAndUsuarioReportaAndAbiertaEnAfter(
++                eq(PLAN.toString()), eq(ana.getId().toString()), any()))
+                 .thenReturn(true);
+ 
+         assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, null))
+diff --git a/src/test/java/com/huecko/backend/plan/service/PlanServiceTest.java b/src/test/java/com/huecko/backend/plan/service/PlanServiceTest.java
+index 1ce9459..04a2fc2 100644
+--- a/src/test/java/com/huecko/backend/plan/service/PlanServiceTest.java
++++ b/src/test/java/com/huecko/backend/plan/service/PlanServiceTest.java
+@@ -9,6 +9,7 @@ import com.huecko.backend.grupo.service.GrupoService;
+ import com.huecko.backend.plan.dto.PlanRequests;
+ import com.huecko.backend.plan.dto.PlanResponse;
+ import com.huecko.backend.plan.event.PlanCerradoEvent;
++import com.huecko.backend.plan.event.PlanRepropuestoEvent;
+ import com.huecko.backend.postgres.entity.Grupo;
+ import com.huecko.backend.postgres.entity.MiembroGrupo;
+ import com.huecko.backend.postgres.entity.Plan;
+@@ -417,6 +418,65 @@ class PlanServiceTest {
+         assertThat(captor.getValue().fecha()).isNull();
+     }
+ 
++    /* ------------------------------------------------------------------ *
++     * Reproponer (tras un REAGENDAR)
++     * ------------------------------------------------------------------ */
++
++    @Test
++    @DisplayName("Un plan en re-coordinación vuelve a votarse con ventanas nuevas y sin los votos viejos")
++    void reproponerVuelveAVotacion() {
++        Plan plan = planAbierto(true); // creado por Ana
++        plan.setEstado(Plan.Estado.EN_RECOORDINACION);
++        plan.setVentanaConfirmada(plan.getVentanas().get(0));
++        planExiste(plan, ana);
++        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
++        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 16, 100), celda(3, 17, 100));
++        List<VotoVentana> votosViejos = List.of(
++                VotoVentana.builder().ventana(plan.getVentanas().get(0)).usuario(bruno).build());
++        when(votoVentanaRepository.findByPlanId(PLAN)).thenReturn(votosViejos);
++
++        LocalDate otraSemana = MIERCOLES.plusWeeks(1);
++        PlanResponse r = servicio.reproponer(ana.getId(), PLAN, new PlanRequests.Reproponer(
++                Instant.now().plus(24, ChronoUnit.HOURS), null,
++                List.of(ventana(otraSemana, "10:00", "12:00"), ventana(otraSemana, "16:00", "18:00"))));
++
++        assertThat(r.estado()).isEqualTo(Plan.Estado.PROPUESTO);
++        assertThat(r.ventanaConfirmadaId()).isNull();
++        assertThat(plan.getVentanas()).extracting(VentanaPlan::getFecha).containsOnly(otraSemana);
++        verify(votoVentanaRepository).deleteAll(votosViejos);
++        verify(eventos).publishEvent(any(PlanRepropuestoEvent.class));
++    }
++
++    @Test
++    @DisplayName("Solo se reproponen planes en re-coordinación")
++    void reproponerExigeRecoordinacion() {
++        Plan plan = planAbierto(true); // PROPUESTO
++        planExiste(plan, ana);
++        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
++
++        assertThatThrownBy(() -> servicio.reproponer(ana.getId(), PLAN, new PlanRequests.Reproponer(
++                Instant.now().plus(24, ChronoUnit.HOURS), null,
++                List.of(ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00")))))
++                .isInstanceOf(BusinessException.class)
++                .hasMessageContaining("re-coordinación");
++        verify(eventos, never()).publishEvent(any(PlanRepropuestoEvent.class));
++    }
++
++    @Test
++    @DisplayName("Un miembro raso no repropone un plan ajeno")
++    void reproponerSoloCreadorUOrganizador() {
++        Plan plan = planAbierto(true); // creado por Ana
++        plan.setEstado(Plan.Estado.EN_RECOORDINACION);
++        planExiste(plan, bruno);
++        soyMiembro(bruno, MiembroGrupo.Rol.MIEMBRO);
++
++        assertThatThrownBy(() -> servicio.reproponer(bruno.getId(), PLAN, new PlanRequests.Reproponer(
++                Instant.now().plus(24, ChronoUnit.HOURS), null,
++                List.of(ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00")))))
++                .isInstanceOf(ForbiddenException.class);
++        verify(votoVentanaRepository, never()).deleteAll(any());
++    }
++
+     @Test
+     @DisplayName("Un cierre rechazado no publica nada: nadie debe recibir un aviso falso")
+     void elCierreRechazadoNoPublica() {
+diff --git a/src/test/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListenerTest.java b/src/test/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListenerTest.java
+new file mode 100644
+index 0000000..c6e574c
+--- /dev/null
++++ b/src/test/java/com/huecko/backend/retraso/service/RetrasosAlReproponerListenerTest.java
+@@ -0,0 +1,27 @@
++package com.huecko.backend.retraso.service;
++
++import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
++import com.huecko.backend.plan.event.PlanRepropuestoEvent;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++
++import java.time.Instant;
++import java.util.UUID;
++
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.verify;
++
++class RetrasosAlReproponerListenerTest {
++
++    @Test
++    @DisplayName("Al reproponer fechas se descartan los retrasos de la fecha anterior")
++    void seDescartanLosRetrasosViejos() {
++        AlertaRetrasoRepository alertas = mock(AlertaRetrasoRepository.class);
++        UUID plan = UUID.randomUUID();
++
++        new RetrasosAlReproponerListener(alertas)
++                .alReproponer(new PlanRepropuestoEvent(UUID.randomUUID(), plan, "Cena", Instant.now()));
++
++        verify(alertas).deleteByPlanId(plan.toString());
++    }
++}
+diff --git a/src/test/java/com/huecko/backend/tiemporeal/FiltroSalidaStompTest.java b/src/test/java/com/huecko/backend/tiemporeal/FiltroSalidaStompTest.java
+new file mode 100644
+index 0000000..fe337f0
+--- /dev/null
++++ b/src/test/java/com/huecko/backend/tiemporeal/FiltroSalidaStompTest.java
+@@ -0,0 +1,77 @@
++package com.huecko.backend.tiemporeal;
++
++import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++import org.springframework.messaging.Message;
++import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
++import org.springframework.messaging.simp.SimpMessageType;
++import org.springframework.messaging.support.MessageBuilder;
++
++import java.util.UUID;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++/**
++ * Quien sale de un grupo deja de recibir sus avisos en ese mismo momento, sin
++ * esperar a reconectarse.
++ */
++class FiltroSalidaStompTest {
++
++    private static final UUID GRUPO = UUID.randomUUID();
++    private static final UUID ANA = UUID.randomUUID();
++
++    private MiembroGrupoRepository miembros;
++    private SesionesStomp sesiones;
++    private FiltroSalidaStomp filtro;
++
++    @BeforeEach
++    void setUp() {
++        miembros = mock(MiembroGrupoRepository.class);
++        sesiones = new SesionesStomp();
++        filtro = new FiltroSalidaStomp(sesiones, miembros);
++        sesiones.registrar("s-ana", ANA);
++    }
++
++    @Test
++    @DisplayName("Un miembro recibe el aviso de su grupo")
++    void elMiembroLoRecibe() {
++        when(miembros.existsByGrupo_IdAndUsuario_Id(GRUPO, ANA)).thenReturn(true);
++
++        assertThat(filtro.preSend(aviso("s-ana", Destinos.grupo(GRUPO)), null)).isNotNull();
++    }
++
++    @Test
++    @DisplayName("Quien ya no es miembro no recibe el aviso aunque siga suscrito")
++    void elExMiembroNoLoRecibe() {
++        when(miembros.existsByGrupo_IdAndUsuario_Id(GRUPO, ANA)).thenReturn(false);
++
++        assertThat(filtro.preSend(aviso("s-ana", Destinos.grupo(GRUPO)), null)).isNull();
++    }
++
++    @Test
++    @DisplayName("Una sesion sin identidad registrada no recibe avisos de grupo")
++    void sesionDesconocida() {
++        assertThat(filtro.preSend(aviso("s-nadie", Destinos.grupo(GRUPO)), null)).isNull();
++    }
++
++    @Test
++    @DisplayName("Los mensajes que no son avisos de grupo pasan sin consultar nada")
++    void otrosMensajesPasan() {
++        SimpMessageHeaderAccessor ack = SimpMessageHeaderAccessor.create(SimpMessageType.CONNECT_ACK);
++        ack.setSessionId("s-ana");
++        Message<byte[]> conexion = MessageBuilder.createMessage(new byte[0], ack.getMessageHeaders());
++
++        assertThat(filtro.preSend(conexion, null)).isNotNull();
++    }
++
++    private Message<byte[]> aviso(String sesionId, String destino) {
++        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
++        accessor.setSessionId(sesionId);
++        accessor.setDestination(destino);
++        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
++    }
++}
+diff --git a/src/test/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptorTest.java b/src/test/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptorTest.java
+index 2818616..e070320 100644
+--- a/src/test/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptorTest.java
++++ b/src/test/java/com/huecko/backend/tiemporeal/SeguridadStompInterceptorTest.java
+@@ -40,13 +40,15 @@ class SeguridadStompInterceptorTest {
+ 
+     private JwtService jwtService;
+     private MiembroGrupoRepository miembros;
++    private SesionesStomp sesiones;
+     private SeguridadStompInterceptor interceptor;
+ 
+     @BeforeEach
+     void setUp() {
+         jwtService = mock(JwtService.class);
+         miembros = mock(MiembroGrupoRepository.class);
+-        interceptor = new SeguridadStompInterceptor(jwtService, miembros);
++        sesiones = new SesionesStomp();
++        interceptor = new SeguridadStompInterceptor(jwtService, miembros, sesiones);
+     }
+ 
+     // --- CONNECT ---
+@@ -66,6 +68,25 @@ class SeguridadStompInterceptorTest {
+                 .isEqualTo(ANA);
+     }
+ 
++    @Test
++    @DisplayName("CONNECT registra la sesion y DISCONNECT la olvida")
++    void laSesionSeRegistraYSeOlvida() {
++        when(jwtService.validar("bueno")).thenReturn(Optional.of(ANA));
++
++        StompHeaderAccessor connect = StompHeaderAccessor.create(StompCommand.CONNECT);
++        connect.setNativeHeader("Authorization", "Bearer bueno");
++        connect.setSessionId("s-1");
++        interceptor.preSend(mensaje(connect), null);
++
++        assertThat(sesiones.usuarioDe("s-1")).contains(ANA.id());
++
++        StompHeaderAccessor disconnect = StompHeaderAccessor.create(StompCommand.DISCONNECT);
++        disconnect.setSessionId("s-1");
++        interceptor.preSend(mensaje(disconnect), null);
++
++        assertThat(sesiones.usuarioDe("s-1")).isEmpty();
++    }
++
+     @Test
+     @DisplayName("CONNECT sin cabecera Authorization se rechaza")
+     void connectSinCabecera() {
+-- 
+2.43.0
+
