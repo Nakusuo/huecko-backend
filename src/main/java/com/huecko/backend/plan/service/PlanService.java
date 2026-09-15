@@ -1,5 +1,6 @@
 package com.huecko.backend.plan.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.common.exception.NotFoundException;
@@ -119,6 +120,19 @@ public class PlanService {
 
         plan.setVentanas(construirVentanas(usuarioId, grupoId, plan, req.ventanas()));
 
+        /* La votación tiene que terminar antes de que empiece la primera opción.
+           Si no, el barrido cerraba después y confirmaba una fecha que ya había
+           pasado (p. ej. plazo de 48 horas y una opción para mañana). */
+        Instant primeraOpcion = plan.getVentanas().stream()
+                .map(v -> ZonaHoraria.instante(v.getFecha(), v.getHoraInicio()))
+                .min(Instant::compareTo)
+                .orElseThrow();
+        if (req.plazoVotacion().isAfter(primeraOpcion)) {
+            throw new BusinessException(
+                    "La votación debe cerrar antes de que empiece la primera opción. Elige un plazo más corto "
+                            + "o fechas más adelante.");
+        }
+
         return aRespuesta(planRepository.save(plan), usuarioId);
     }
 
@@ -131,7 +145,9 @@ public class PlanService {
      */
     private List<VentanaPlan> construirVentanas(UUID usuarioId, UUID grupoId, Plan plan,
                                                 List<PlanRequests.Ventana> pedidas) {
-        LocalDate hoy = LocalDate.now();
+        // En la zona de los grupos, no en la del servidor (ver ZonaHoraria).
+        LocalDate hoy = ZonaHoraria.hoy();
+        Instant ahora = Instant.now();
         Map<LocalDate, DisponibilidadResponse> cruces = new HashMap<>();
         Set<String> vistas = new HashSet<>();
         List<VentanaPlan> ventanas = new ArrayList<>(pedidas.size());
@@ -142,6 +158,10 @@ public class PlanService {
             }
             if (pedida.fecha().isBefore(hoy)) {
                 throw new BusinessException("No se puede proponer una ventana en una fecha pasada");
+            }
+            if (!ZonaHoraria.instante(pedida.fecha(), pedida.horaInicio()).isAfter(ahora)) {
+                throw new BusinessException(
+                        "La ventana del " + pedida.fecha() + " a las " + pedida.horaInicio() + " ya empezó");
             }
             if (!vistas.add(pedida.fecha() + "|" + pedida.horaInicio() + "|" + pedida.horaFin())) {
                 throw new BusinessException("Hay dos ventanas idénticas: cada opción debe ser distinta");
@@ -216,6 +236,7 @@ public class PlanService {
 
     @Transactional
     public PlanResponse votar(UUID usuarioId, UUID planId, UUID ventanaId) {
+        planRepository.bloquearPorId(planId);
         Plan plan = planConAcceso(usuarioId, planId);
         exigirVotacionAbierta(plan);
 
@@ -247,6 +268,7 @@ public class PlanService {
 
     @Transactional
     public PlanResponse quitarVoto(UUID usuarioId, UUID planId, UUID ventanaId) {
+        planRepository.bloquearPorId(planId);
         Plan plan = planConAcceso(usuarioId, planId);
         exigirVotacionAbierta(plan);
 
@@ -277,6 +299,7 @@ public class PlanService {
      */
     @Transactional
     public PlanResponse cerrarManualmente(UUID usuarioId, UUID planId) {
+        planRepository.bloquearPorId(planId);
         Plan plan = planConAcceso(usuarioId, planId);
 
         boolean esCreador = plan.getCreadoPor().getId().equals(usuarioId);
@@ -390,6 +413,9 @@ public class PlanService {
     /** Una transacción por plan: que uno falle no debe impedir cerrar el resto. */
     @Transactional
     public void cerrarPorPlazoVencido(UUID planId) {
+        // Con el bloqueo, si alguien lo está cerrando a mano se espera a que
+        // termine y la comprobación de abajo ya ve el plan cerrado.
+        planRepository.bloquearPorId(planId);
         Plan plan = planRepository.findByIdConVentanas(planId).orElse(null);
         // Puede haberse cerrado a mano entre el barrido y esta llamada.
         if (plan == null || plan.getEstado() != Plan.Estado.PROPUESTO) {

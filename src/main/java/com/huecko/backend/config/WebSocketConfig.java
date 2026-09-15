@@ -49,10 +49,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic");
         // El cliente no publica: todo lo que va del cliente al servidor pasa por
-        // REST, donde ya están la validación y el control de acceso. Dejar
-        // abierto un prefijo de aplicación sería una segunda puerta de entrada
-        // con otras reglas.
-        registry.setApplicationDestinationPrefixes("/app");
+        // REST, donde ya están la validación y el control de acceso. Por eso no
+        // se registra ningún prefijo de aplicación, y SeguridadStompInterceptor
+        // rechaza cualquier SEND.
     }
 
     @Override

@@ -1,0 +1,12 @@
+# Perfil de desarrollo (el activo por defecto, ver application.yml).
+#
+# Aquí y solo aquí van los valores cómodos para trabajar en local que serían un
+# riesgo en un despliegue: la clave JWT de ejemplo y los datos de demo.
+huecko:
+  jwt:
+    # Clave pública de ejemplo. Nunca usarla fuera de tu máquina: con ella
+    # cualquiera puede firmar un token a nombre de otro usuario.
+    secret: ${HUECKO_JWT_SECRET:cambia-esta-clave-de-desarrollo-huecko-2026-min-32-chars}
+  # Idempotente: si el usuario demo ya existe no vuelve a insertar nada.
+  seed:
+    enabled: true

@@ -38,7 +38,9 @@ public final class PlanRequests {
             @NotEmpty(message = "Hay que proponer al menos 2 ventanas de tiempo")
             @Size(min = 2, max = 5, message = "Un plan se vota entre 2 y 5 ventanas de tiempo")
             @Valid
-            List<Ventana> ventanas
+            // Sin @NotNull en el elemento, `[null, {...}]` pasaba la validación y
+            // acababa en un NullPointerException (500).
+            List<@NotNull(message = "Hay una ventana vacía") Ventana> ventanas
     ) {
     }
 

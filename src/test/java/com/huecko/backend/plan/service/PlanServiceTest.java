@@ -177,6 +177,24 @@ class PlanServiceTest {
     }
 
     @Test
+    @DisplayName("La votación debe cerrar antes de que empiece la primera opción")
+    void elPlazoNoPuedePasarDeLaPrimeraOpcion() {
+        soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 16, 100), celda(3, 17, 100));
+
+        // Plazo diez días después del miércoles: se confirmaría una fecha ya pasada.
+        Instant plazoTardio = MIERCOLES.plusDays(10).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        PlanRequests.Crear req = new PlanRequests.Crear(
+                "Junta", null, plazoTardio, true,
+                List.of(ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00")));
+
+        assertThatThrownBy(() -> servicio.crear(ana.getId(), GRUPO, req))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("primera opción");
+        verify(planRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Dos ventanas idénticas se rechazan: no habría nada que elegir entre ellas")
     void lasVentanasDuplicadasSeRechazan() {
         soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
@@ -322,6 +340,21 @@ class PlanServiceTest {
         assertThat(r.ventanaConfirmadaId()).isEqualTo(ganadora.getId());
         assertThat(r.cerradoEn()).isNotNull();
         assertThat(r.votacionAbierta()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Cerrar bloquea la fila del plan antes de leer su estado")
+    void cerrarBloqueaElPlan() {
+        Plan plan = planAbierto(true);
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+
+        servicio.cerrarManualmente(ana.getId(), PLAN);
+
+        // Sin el bloqueo, dos cierres simultáneos confirmaban y avisaban dos veces.
+        org.mockito.InOrder orden = org.mockito.Mockito.inOrder(planRepository);
+        orden.verify(planRepository).bloquearPorId(PLAN);
+        orden.verify(planRepository).findByIdConVentanas(PLAN);
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.imprevisto.dto.ImprevistoDtos;
 import com.huecko.backend.mongo.document.VotacionExpres;
+import com.huecko.backend.mongo.repository.VotacionExpresOperaciones;
 import com.huecko.backend.mongo.repository.VotacionExpresRepository;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.Plan;
@@ -17,8 +18,11 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -29,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Módulo 5: imprevistos de último minuto (HU-13 a HU-16).
@@ -44,6 +49,7 @@ public class ImprevistoService {
     private static final Logger log = LoggerFactory.getLogger(ImprevistoService.class);
 
     private final VotacionExpresRepository votacionRepository;
+    private final VotacionExpresOperaciones operaciones;
     private final PlanRepository planRepository;
     private final MiembroGrupoRepository miembroGrupoRepository;
     private final UsuarioRepository usuarioRepository;
@@ -74,6 +80,9 @@ public class ImprevistoService {
             throw new BusinessException(
                     "Solo se puede reportar un imprevisto en un plan confirmado");
         }
+        if (plan.yaTermino(Instant.now())) {
+            throw new BusinessException("Este plan ya terminó: no se pueden reportar imprevistos");
+        }
 
         if (votacionRepository.findByPlanIdAndEstado(
                 planId.toString(), VotacionExpres.Estado.ABIERTA).isPresent()) {
@@ -103,23 +112,36 @@ public class ImprevistoService {
                     veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(), null);
         }
 
+        // Quien ya abrió una votación en este plan no puede abrir otra: sin esto,
+        // tras un MANTENER la misma persona podía reabrirla una y otra vez.
+        if (votacionRepository.existsByPlanIdAndUsuarioReporta(planId.toString(), usuarioId.toString())) {
+            throw new BusinessException("Ya reportaste tu ausencia en este plan");
+        }
+
         // RF-17: baja crítica. Se abre la votación exprés.
         Instant ahora = Instant.now();
-        VotacionExpres votacion = votacionRepository.save(VotacionExpres.builder()
-                .planId(planId.toString())
-                .grupoId(plan.getGrupo().getId().toString())
-                .usuarioReporta(usuarioId.toString())
-                .nombreReporta(usuario.getNombre())
-                .motivo(motivoLimpio)
-                .criticidad(veredicto.criticidad())
-                .razonCriticidad(veredicto.razon())
-                .origenCriticidad(veredicto.origen().name())
-                .estado(VotacionExpres.Estado.ABIERTA)
-                .votos(new LinkedHashMap<>())
-                .miembrosDelGrupo((int) miembroGrupoRepository.countByGrupo_Id(plan.getGrupo().getId()))
-                .abiertaEn(ahora)
-                .expiraEn(ahora.plus(Duration.ofMinutes(plazoMinutos)))
-                .build());
+        VotacionExpres votacion;
+        try {
+            votacion = votacionRepository.save(VotacionExpres.builder()
+                    .planId(planId.toString())
+                    .grupoId(plan.getGrupo().getId().toString())
+                    .usuarioReporta(usuarioId.toString())
+                    .nombreReporta(usuario.getNombre())
+                    .motivo(motivoLimpio)
+                    .criticidad(veredicto.criticidad())
+                    .razonCriticidad(veredicto.razon())
+                    .origenCriticidad(veredicto.origen().name())
+                    .estado(VotacionExpres.Estado.ABIERTA)
+                    .votos(new LinkedHashMap<>())
+                    .miembrosDelGrupo((int) miembroGrupoRepository.countByGrupo_Id(plan.getGrupo().getId()))
+                    .abiertaEn(ahora)
+                    .expiraEn(ahora.plus(Duration.ofMinutes(plazoMinutos)))
+                    .build());
+        } catch (DuplicateKeyException ex) {
+            // Otro aviso abrió la votación en el mismo instante (índice único
+            // `uniq_abierta_por_plan`).
+            throw new BusinessException("Ya hay una votación exprés abierta para este plan");
+        }
 
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA,
@@ -150,9 +172,12 @@ public class ImprevistoService {
             throw new BusinessException("El plazo de la votación exprés ya venció");
         }
 
-        // Cambiar de opinión sustituye el voto anterior, no suma otro.
-        votacion.getVotos().put(usuarioId.toString(), opcion);
-        VotacionExpres guardada = votacionRepository.save(votacion);
+        // Cambiar de opinión sustituye el voto anterior, no suma otro. Se escribe
+        // solo ese voto y solo si la votación sigue abierta: ver
+        // VotacionExpresOperaciones.
+        VotacionExpres guardada = operaciones
+                .registrarVoto(planId.toString(), usuarioId.toString(), opcion, Instant.now())
+                .orElseThrow(() -> new BusinessException("La votación exprés ya cerró o venció"));
 
         return ImprevistoDtos.VotacionExpresResponse.from(guardada, usuarioId.toString());
     }
@@ -185,30 +210,78 @@ public class ImprevistoService {
      */
     @Transactional
     public void cerrar(String votacionId) {
-        VotacionExpres votacion = votacionRepository.findById(votacionId).orElse(null);
-        if (votacion == null || votacion.getEstado() != VotacionExpres.Estado.ABIERTA) {
-            return; // se cerró entre el barrido y esta llamada
+        Instant ahora = Instant.now();
+
+        // Se marca CERRADA de forma atómica antes de contar. Si ya lo estaba,
+        // otro proceso la cerró entre el barrido y esta llamada. Y a partir de
+        // aquí ningún voto nuevo entra, así que el recuento es definitivo.
+        VotacionExpres votacion = operaciones.reclamarParaCerrar(votacionId, ahora).orElse(null);
+        if (votacion == null) {
+            return;
         }
 
-        boolean sinVotos = votacion.getVotos().isEmpty();
-        VotacionExpres.Opcion resultado = sinVotos
-                ? resultadoPorDefecto
-                : masVotada(votacion.getVotos());
+        /*
+         * El aviso al grupo sale solo cuando el cambio del plan ya está guardado
+         * en Postgres. Antes se mandaba dentro de la transacción: si el commit
+         * fallaba, el grupo ya había leído "se canceló" con el plan aún
+         * confirmado, y la votación quedaba cerrada en Mongo sin que nadie
+         * volviera a aplicarla. Si la transacción no se confirma, se reabre y el
+         * siguiente barrido lo reintenta.
+         */
+        AtomicReference<Map<String, Object>> aviso = new AtomicReference<>();
+        UUID grupoId = UUID.fromString(votacion.getGrupoId());
+        boolean conTransaccion = TransactionSynchronizationManager.isSynchronizationActive();
 
-        Instant ahora = Instant.now();
-        votacion.setEstado(VotacionExpres.Estado.CERRADA);
-        votacion.setCerradaEn(ahora);
-        votacion.setResultado(resultado);
-        votacion.setResultadoPorDefecto(sinVotos);
-        // Solo ahora se marca para purga: mientras estaba abierta, el índice
-        // TTL la ignoraba porque este campo era nulo.
-        votacion.setPurgarEn(ahora.plus(Duration.ofDays(diasPurga)));
-        votacionRepository.save(votacion);
+        if (conTransaccion) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_COMMITTED) {
+                        avisarCierre(grupoId, aviso.get());
+                    } else {
+                        log.warn("El cierre de la votación exprés {} no se guardó: se reabre", votacionId);
+                        operaciones.reabrir(votacionId);
+                    }
+                }
+            });
+        }
 
-        aplicarAlPlan(votacion, resultado);
+        try {
+            boolean sinVotos = votacion.getVotos() == null || votacion.getVotos().isEmpty();
+            VotacionExpres.Opcion resultado = sinVotos
+                    ? resultadoPorDefecto
+                    : masVotada(votacion.getVotos());
 
-        log.info("Votación exprés {} cerrada con {}{}", votacionId, resultado,
-                sinVotos ? " (por defecto, nadie votó)" : "");
+            votacion.setEstado(VotacionExpres.Estado.CERRADA);
+            votacion.setCerradaEn(ahora);
+            votacion.setResultado(resultado);
+            votacion.setResultadoPorDefecto(sinVotos);
+            // Solo ahora se marca para purga: mientras estaba abierta, el índice
+            // TTL la ignoraba porque este campo era nulo.
+            votacion.setPurgarEn(ahora.plus(Duration.ofDays(diasPurga)));
+            votacionRepository.save(votacion);
+
+            aviso.set(aplicarAlPlan(votacion, resultado));
+
+            log.info("Votación exprés {} cerrada con {}{}", votacionId, resultado,
+                    sinVotos ? " (por defecto, nadie votó)" : "");
+        } catch (RuntimeException ex) {
+            // Sin transacción no hay afterCompletion que la reabra.
+            if (!conTransaccion) {
+                operaciones.reabrir(votacionId);
+            }
+            throw ex;
+        }
+
+        if (!conTransaccion) {
+            avisarCierre(grupoId, aviso.get());
+        }
+    }
+
+    private void avisarCierre(UUID grupoId, Map<String, Object> datos) {
+        if (datos != null) {
+            notificador.aGrupo(grupoId, EventoTiempoReal.Tipo.VOTACION_EXPRES_CERRADA, datos);
+        }
     }
 
     /**
@@ -244,21 +317,29 @@ public class ImprevistoService {
         };
     }
 
-    private void aplicarAlPlan(VotacionExpres votacion, VotacionExpres.Opcion resultado) {
+    /** Aplica el resultado al plan y devuelve los datos del aviso, o `null` si el plan ya no existe. */
+    private Map<String, Object> aplicarAlPlan(VotacionExpres votacion, VotacionExpres.Opcion resultado) {
         Plan plan = planRepository.findById(UUID.fromString(votacion.getPlanId())).orElse(null);
         if (plan == null) {
-            return;
+            return null;
         }
 
-        switch (resultado) {
-            case CANCELAR -> plan.setEstado(Plan.Estado.CANCELADO);
-            // El plan vuelve a coordinación: la fecha confirmada ya no vale,
-            // pero el plan no se tira. EN_RECOORDINACION ya existía en el enum.
-            case REAGENDAR -> plan.setEstado(Plan.Estado.EN_RECOORDINACION);
-            // MANTENER no toca nada: sigue CONFIRMADO con su fecha.
-            case MANTENER -> { }
+        // Solo sobre un plan que sigue confirmado: si mientras tanto se canceló,
+        // un REAGENDAR no debe resucitarlo.
+        if (plan.getEstado() == Plan.Estado.CONFIRMADO) {
+            switch (resultado) {
+                case CANCELAR -> plan.setEstado(Plan.Estado.CANCELADO);
+                // El plan vuelve a coordinación: la fecha confirmada ya no vale,
+                // pero el plan no se tira. EN_RECOORDINACION ya existía en el enum.
+                case REAGENDAR -> {
+                    plan.setEstado(Plan.Estado.EN_RECOORDINACION);
+                    plan.setVentanaConfirmada(null);
+                }
+                // MANTENER no toca nada: sigue CONFIRMADO con su fecha.
+                case MANTENER -> { }
+            }
+            planRepository.save(plan);
         }
-        planRepository.save(plan);
 
         Map<String, Object> datos = new LinkedHashMap<>();
         datos.put("planId", plan.getId().toString());
@@ -266,9 +347,7 @@ public class ImprevistoService {
         datos.put("resultado", resultado.name());
         datos.put("porDefecto", votacion.isResultadoPorDefecto());
         datos.put("estadoPlan", plan.getEstado().name());
-
-        notificador.aGrupo(plan.getGrupo().getId(),
-                EventoTiempoReal.Tipo.VOTACION_EXPRES_CERRADA, datos);
+        return datos;
     }
 
     /* ------------------------------------------------------------------ */

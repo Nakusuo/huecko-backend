@@ -83,6 +83,11 @@ cp .env.example .env
 Los valores por defecto sirven para desarrollo tal cual. Lo único obligatorio de
 cambiar antes de desplegar es `HUECKO_JWT_SECRET`.
 
+La clave de ejemplo solo existe en el perfil `dev` (`application-dev.yml`). Con
+cualquier otro perfil, si `HUECKO_JWT_SECRET` no está definida la API no arranca,
+y con `prod` tampoco arranca si sigue siendo la clave de ejemplo: con ella
+cualquiera podría firmar un token a nombre de otra persona.
+
 ### 2. Levantar las bases
 
 ```bash
@@ -117,8 +122,9 @@ frontend**, así que la app se comporta igual conectada que desconectada:
 | `diana.torres@huecko.com` | `demo1234` |
 
 La carga es idempotente: si los usuarios ya existen no se duplica nada, y los
-bloques de horario solo se siembran si el usuario no tiene ninguno. Se apaga con
-`huecko.seed.enabled=false` (el perfil `prod` ya lo hace).
+bloques de horario solo se siembran si el usuario no tiene ninguno. Solo la
+enciende el perfil `dev`; en cualquier otro perfil está apagada, para que un
+despliegue no cree cuentas con contraseña conocida.
 
 ```bash
 # Prueba de humo de punta a punta

@@ -17,7 +17,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-huecko}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-huecko}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Solo en esta máquina: con las credenciales de ejemplo, exponer la base a
+      # toda la red local sería dejarla abierta.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - huecko-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -35,7 +37,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-huecko}
       MONGO_INITDB_DATABASE: ${MONGO_DB:-huecko}
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
     volumes:
       - huecko-mongo-data:/data/db
       # Solo se ejecuta la primera vez, con el volumen vacío. Crea la colección
