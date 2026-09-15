@@ -37,6 +37,14 @@ import java.util.Map;
  */
 @Document(collection = "votaciones_expres")
 @CompoundIndex(name = "idx_estado_expira", def = "{'estado': 1, 'expiraEn': 1}")
+/*
+ * Como mucho una votación ABIERTA por plan, garantizado por la base. Comprobarlo
+ * solo en el servicio no bastaba: dos avisos simultáneos pasaban los dos la
+ * comprobación y abrían dos votaciones, y a partir de ahí cada consulta de
+ * "la votación abierta" fallaba con un 500.
+ */
+@CompoundIndex(name = "uniq_abierta_por_plan", def = "{'planId': 1}", unique = true,
+               partialFilter = "{ 'estado': 'ABIERTA' }")
 @Getter
 @Setter
 @NoArgsConstructor

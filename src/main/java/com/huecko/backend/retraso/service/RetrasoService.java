@@ -93,7 +93,13 @@ public class RetrasoService {
     @Transactional(readOnly = true)
     public void retirar(UUID usuarioId, UUID planId) {
         Plan plan = planConAcceso(usuarioId, planId);
-        alertaRepository.deleteByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString());
+        long borradas = alertaRepository.deleteByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString());
+
+        // Sin nada que retirar no se avisa: un DELETE repetido mandaba al grupo
+        // un "ya llega a tiempo" de alguien que nunca había avisado.
+        if (borradas == 0) {
+            return;
+        }
 
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.RETRASO_REPORTADO,
@@ -124,6 +130,9 @@ public class RetrasoService {
         if (plan.getEstado() != Plan.Estado.CONFIRMADO) {
             throw new BusinessException(
                     "Solo se puede avisar de un retraso en un plan ya confirmado");
+        }
+        if (plan.yaTermino(Instant.now())) {
+            throw new BusinessException("Este plan ya terminó: no se puede avisar de un retraso");
         }
     }
 

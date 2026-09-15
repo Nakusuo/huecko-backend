@@ -49,14 +49,18 @@ management:
 
 huecko:
   jwt:
-    secret: ${HUECKO_JWT_SECRET:cambia-esta-clave-de-desarrollo-huecko-2026-min-32-chars}
+    # Sin valor por defecto a propósito: fuera del perfil `dev` hay que definir
+    # HUECKO_JWT_SECRET o la aplicación no arranca. La clave de desarrollo vive
+    # en application-dev.yml, que solo se carga con ese perfil.
+    secret: ${HUECKO_JWT_SECRET}
     expiration-minutes: ${HUECKO_JWT_EXPIRATION_MINUTES:720}
   cors:
     allowed-origins: ${HUECKO_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
-  # Carga de datos de demo al arrancar. Idempotente: si el usuario demo ya
-  # existe no vuelve a insertar nada.
+  # Carga de datos de demo al arrancar (usuarios con contraseña conocida).
+  # Apagada por defecto: solo la enciende el perfil `dev`. Así un despliegue
+  # sin perfil, o con un perfil mal escrito, no crea cuentas de demo.
   seed:
-    enabled: true
+    enabled: false
   planes:
     # RF-10: barrido que cierra las votaciones con el plazo vencido y confirma
     # la ventana ganadora. Se puede apagar en pruebas.

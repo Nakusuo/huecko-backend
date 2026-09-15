@@ -104,6 +104,28 @@ class CalculadoraDisponibilidadTest {
     }
 
     @Test
+    @DisplayName("RF-06: el umbral se compara con la fracción exacta, sin redondear hacia arriba")
+    void elUmbralNoSeCumplePorRedondeo() {
+        // 6 de 11 libres = 54,5 %. Redondeando salía 55 y "cumplía" un umbral del 55.
+        List<UUID> grupo = new ArrayList<>();
+        List<BloqueHorario> bloques = new ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            UUID persona = UUID.randomUUID();
+            grupo.add(persona);
+            if (i < 5) {
+                bloques.add(recurrente(persona, 1, "08:00", "12:00"));
+            }
+        }
+
+        CeldaDisponibilidadResponse c = celda(calcular(grupo, bloques, 55), 1, 9);
+
+        assertThat(c.disponibles()).isEqualTo(6);
+        assertThat(c.porcentaje()).isEqualTo(54);
+        assertThat(c.cumpleUmbral()).isFalse();
+        assertThat(celda(calcular(grupo, bloques, 54), 1, 9).cumpleUmbral()).isTrue();
+    }
+
+    @Test
     @DisplayName("Las horas consecutivas con quórum se agrupan en una sola ventana")
     void lasHorasConsecutivasSeAgrupan() {
         // Todo el mundo ocupado salvo de 10:00 a 13:00 el martes.
