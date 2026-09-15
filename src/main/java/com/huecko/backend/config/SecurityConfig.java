@@ -2,6 +2,7 @@ package com.huecko.backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huecko.backend.auth.service.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -62,6 +63,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Los errores que Tomcat o el firewall reenvían a /error
+                        // conservan su código. Sin esto se convertían en 401 y el
+                        // frontend cerraba la sesión por un simple 400.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         // RNF-05: el handshake de SockJS llega antes de que el
@@ -91,7 +96,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);
+        config.setAllowedOriginPatterns(allowedOrigins);
+        /* SockJS pide `/api/ws/info` con credenciales. Este filtro responde antes
+           que la configuración CORS propia de SockJS, así que si aquí no se
+           permiten, el navegador bloquea la conexión en tiempo real cuando el
+           frontend está en otro dominio. No abre nada: la API no usa cookies,
+           la identidad viaja en la cabecera Authorization. */
+        config.setAllowCredentials(true);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setMaxAge(3600L);

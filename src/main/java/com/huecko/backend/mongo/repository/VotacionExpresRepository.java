@@ -13,6 +13,9 @@ public interface VotacionExpresRepository extends MongoRepository<VotacionExpres
 
     List<VotacionExpres> findByPlanIdOrderByAbiertaEnDesc(String planId);
 
+    /** Si esa persona ya abrió alguna votación exprés en el plan (abierta o cerrada). */
+    boolean existsByPlanIdAndUsuarioReporta(String planId, String usuarioReporta);
+
     /**
      * RF-18: las que hay que cerrar. El planificador las busca por plazo, no
      * el índice TTL — ver el comentario de {@link VotacionExpres}.
