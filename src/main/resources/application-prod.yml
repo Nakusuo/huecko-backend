@@ -8,6 +8,12 @@ huecko:
   seed:
     enabled: false
 
+# Cualquier cuenta registrada podía ver el detalle de salud (bases, disco).
+management:
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     com.huecko.backend: INFO

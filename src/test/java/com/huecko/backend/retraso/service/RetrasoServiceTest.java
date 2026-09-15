@@ -7,6 +7,7 @@ import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -24,6 +25,8 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -184,6 +187,7 @@ class RetrasoServiceTest {
     @DisplayName("Retirar el aviso lo borra y lo comunica al grupo")
     void seRetiraElAviso() {
         planEnEstado(Plan.Estado.CONFIRMADO);
+        when(alertaRepository.deleteByPlanIdAndUsuarioId(PLAN.toString(), ana.getId().toString())).thenReturn(1L);
 
         servicio.retirar(ana.getId(), PLAN);
 
@@ -194,6 +198,30 @@ class RetrasoServiceTest {
         verify(notificador).aGrupo(eq(GRUPO),
                 eq(EventoTiempoReal.Tipo.RETRASO_REPORTADO), datos.capture());
         assertThat(datos.getValue()).containsEntry("retirado", true);
+    }
+
+    @Test
+    @DisplayName("Retirar sin haber avisado no manda nada al grupo")
+    void retirarSinAvisoNoNotifica() {
+        planEnEstado(Plan.Estado.CONFIRMADO);
+        when(alertaRepository.deleteByPlanIdAndUsuarioId(PLAN.toString(), ana.getId().toString())).thenReturn(0L);
+
+        servicio.retirar(ana.getId(), PLAN);
+
+        verify(notificador, never()).aGrupo(any(), any(), anyMap());
+    }
+
+    @Test
+    @DisplayName("Un plan que ya termino no admite retrasos")
+    void planTerminadoNoAdmiteRetrasos() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        plan.setVentanaConfirmada(VentanaPlan.builder()
+                .fecha(LocalDate.now().minusDays(2)).horaInicio(LocalTime.of(10, 0)).horaFin(LocalTime.of(12, 0))
+                .build());
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, 10))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("terminó");
     }
 
     /* ------------------------------------------------------------------ */

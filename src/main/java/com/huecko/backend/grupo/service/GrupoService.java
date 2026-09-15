@@ -1,5 +1,6 @@
 package com.huecko.backend.grupo.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.common.exception.NotFoundException;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -119,6 +121,9 @@ public class GrupoService {
      */
     @Transactional
     public GrupoResponse agregarMiembro(UUID usuarioId, UUID grupoId, String email) {
+        // Dos altas simultáneas del mismo correo (doble clic) pasaban las dos la
+        // comprobación de abajo y la segunda fallaba con un 500.
+        grupoRepository.bloquearPorId(grupoId);
         Grupo grupo = exigirOrganizador(usuarioId, grupoId).getGrupo();
 
         Usuario nuevo = usuarioRepository.findByEmailIgnoreCase(email.trim())
@@ -141,6 +146,7 @@ public class GrupoService {
     @Transactional
     public GrupoResponse actualizarMiembro(UUID usuarioId, UUID grupoId, UUID objetivoId,
                                            GrupoRequests.ActualizarMiembro req) {
+        grupoRepository.bloquearPorId(grupoId);
         exigirOrganizador(usuarioId, grupoId);
 
         MiembroGrupo objetivo = miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(grupoId, objetivoId)
@@ -166,10 +172,14 @@ public class GrupoService {
      *
      * Si se va el último integrante el grupo se borra: dejarlo vacío solo
      * generaría un grupo fantasma que nadie puede volver a abrir, porque la
-     * lista se consulta por membresía.
+     * lista se consulta por membresía. Si tiene planes no se borra: las
+     * votaciones y planes cuelgan de él, y el borrado fallaba por la clave
+     * foránea dejando a la persona atrapada en el grupo. Queda sin integrantes,
+     * que a efectos de la app es lo mismo.
      */
     @Transactional
     public void salir(UUID usuarioId, UUID grupoId, UUID objetivoId) {
+        grupoRepository.bloquearPorId(grupoId);
         MiembroGrupo propio = exigirMiembro(usuarioId, grupoId);
 
         boolean esOtraPersona = !usuarioId.equals(objetivoId);
@@ -189,7 +199,7 @@ public class GrupoService {
 
         miembroGrupoRepository.delete(objetivo);
 
-        if (miembroGrupoRepository.countByGrupo_Id(grupoId) == 0) {
+        if (miembroGrupoRepository.countByGrupo_Id(grupoId) == 0 && !grupoRepository.tienePlanes(grupoId)) {
             grupoRepository.delete(objetivo.getGrupo());
         }
     }
@@ -227,15 +237,25 @@ public class GrupoService {
                         BloqueHorario.Estado.CONFIRMADO);
 
         return calculadora.calcular(grupoId, miembros, bloques, umbralEfectivo,
-                semana == null ? LocalDate.now() : semana);
+                semana == null ? ZonaHoraria.hoy() : semana);
     }
 
     /* ------------------------------------------------------------------ *
      * Apoyo
      * ------------------------------------------------------------------ */
 
+    /**
+     * Organizadores primero y después por nombre. La consulta ordena por el
+     * texto del rol, y "MIEMBRO" va antes que "ORGANIZADOR" en el alfabeto; el
+     * frontend asigna los colores por posición y espera ese orden.
+     */
+    private static final Comparator<MiembroGrupo> ORDEN_DE_MIEMBROS =
+            Comparator.comparing((MiembroGrupo m) -> m.getRol() != MiembroGrupo.Rol.ORGANIZADOR)
+                    .thenComparing(m -> m.getUsuario().getNombre(), String.CASE_INSENSITIVE_ORDER);
+
     private List<MiembroResponse> miembrosDe(UUID grupoId) {
         return miembroGrupoRepository.findByGrupoIdConUsuario(grupoId).stream()
+                .sorted(ORDEN_DE_MIEMBROS)
                 .map(MiembroResponse::from)
                 .toList();
     }

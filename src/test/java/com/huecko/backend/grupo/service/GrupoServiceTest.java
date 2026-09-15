@@ -255,6 +255,23 @@ class GrupoServiceTest {
     }
 
     @Test
+    @DisplayName("Si el grupo vacío tiene planes no se borra: la clave foránea lo impediría")
+    void elGrupoVacioConPlanesNoSeBorra() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        UUID anaId = jefa.getUsuario().getId();
+
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, anaId)).thenReturn(Optional.of(jefa));
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(jefa));
+        when(miembroGrupoRepository.countByGrupo_Id(GRUPO)).thenReturn(1L, 0L);
+        when(grupoRepository.tienePlanes(GRUPO)).thenReturn(true);
+
+        servicio().salir(anaId, GRUPO, anaId);
+
+        verify(miembroGrupoRepository).delete(jefa);
+        verify(grupoRepository, never()).delete(any());
+    }
+
+    @Test
     @DisplayName("Degradar al único organizador se rechaza: el grupo quedaría sin quien lo administre")
     void noSePuedeDegradarAlUnicoOrganizador() {
         MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);

@@ -14,5 +14,6 @@ public interface AlertaRetrasoRepository extends MongoRepository<AlertaRetraso, 
     /** Para corregir la estimación en vez de acumular avisos. */
     Optional<AlertaRetraso> findByPlanIdAndUsuarioId(String planId, String usuarioId);
 
-    void deleteByPlanIdAndUsuarioId(String planId, String usuarioId);
+    /** Devuelve cuántas alertas borró: 0 si esa persona no había avisado. */
+    long deleteByPlanIdAndUsuarioId(String planId, String usuarioId);
 }

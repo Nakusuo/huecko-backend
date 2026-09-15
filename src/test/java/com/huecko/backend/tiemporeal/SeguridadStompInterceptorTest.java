@@ -102,25 +102,55 @@ class SeguridadStompInterceptorTest {
     }
 
     @Test
-    @DisplayName("Suscribirse al grupo de otro se rechaza aunque el token sea valido")
+    @DisplayName("Suscribirse al grupo de otro se descarta aunque el token sea valido")
     void suscripcionAjena() {
         when(miembros.existsByGrupo_IdAndUsuario_Id(OTRO_GRUPO, ANA.id())).thenReturn(false);
 
         StompHeaderAccessor accessor = suscripcionAutenticada(Destinos.grupo(OTRO_GRUPO));
 
-        assertThatThrownBy(() -> interceptor.preSend(mensaje(accessor), null))
-                .isInstanceOf(MessageDeliveryException.class)
-                .hasMessageContaining("No perteneces");
+        // Se descarta sin lanzar: lanzar cerraría la conexión entera.
+        assertThat(interceptor.preSend(mensaje(accessor), null)).isNull();
     }
 
     @Test
-    @DisplayName("Un destino que no es de grupo se rechaza")
+    @DisplayName("Un destino que no es de grupo se descarta")
     void destinoDesconocido() {
         StompHeaderAccessor accessor = suscripcionAutenticada("/topic/todo");
+
+        assertThat(interceptor.preSend(mensaje(accessor), null)).isNull();
+    }
+
+    // --- otros comandos ---
+
+    @Test
+    @DisplayName("SEND a un topic de grupo se rechaza: el cliente no publica")
+    void sendRechazado() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination(Destinos.grupo(GRUPO));
+        accessor.setUser(new UsernamePasswordAuthenticationToken(ANA, null, List.of()));
 
         assertThatThrownBy(() -> interceptor.preSend(mensaje(accessor), null))
                 .isInstanceOf(MessageDeliveryException.class)
                 .hasMessageContaining("no permitido");
+    }
+
+    @Test
+    @DisplayName("El frame STOMP (alias de CONNECT) tambien exige token")
+    void frameStompSinToken() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.STOMP);
+
+        assertThatThrownBy(() -> interceptor.preSend(mensaje(accessor), null))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("Authorization");
+    }
+
+    @Test
+    @DisplayName("UNSUBSCRIBE y DISCONNECT pasan")
+    void unsubscribeYDisconnect() {
+        assertThat(interceptor.preSend(mensaje(StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE)), null))
+                .isNotNull();
+        assertThat(interceptor.preSend(mensaje(StompHeaderAccessor.create(StompCommand.DISCONNECT)), null))
+                .isNotNull();
     }
 
     @Test

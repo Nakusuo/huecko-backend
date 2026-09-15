@@ -3,7 +3,7 @@ package com.huecko.backend.usuario.controller;
 import com.huecko.backend.auth.dto.UsuarioResponse;
 import com.huecko.backend.auth.service.UsuarioAutenticado;
 import com.huecko.backend.common.exception.BusinessException;
-import com.huecko.backend.common.exception.NotFoundException;
+import com.huecko.backend.common.exception.UnauthorizedException;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.usuario.dto.ActualizarPerfilRequest;
@@ -58,6 +58,6 @@ public class MeController {
 
     private Usuario cargar(UsuarioAutenticado autenticado) {
         return usuarioRepository.findById(autenticado.id())
-                .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
+                .orElseThrow(() -> new UnauthorizedException("Tu cuenta ya no existe. Inicia sesión de nuevo."));
     }
 }

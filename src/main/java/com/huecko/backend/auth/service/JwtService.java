@@ -5,6 +5,8 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -22,12 +24,25 @@ public class JwtService {
     /** HS256 exige una clave de al menos 256 bits. */
     private static final int MIN_SECRET_BYTES = 32;
 
+    /** Prefijo de la clave de desarrollo que está publicada en el repositorio. */
+    private static final String PREFIJO_CLAVE_DE_DESARROLLO = "cambia-esta-clave";
+
     private final SecretKey key;
     private final long expirationMinutes;
 
     public JwtService(
             @Value("${huecko.jwt.secret}") String secret,
-            @Value("${huecko.jwt.expiration-minutes}") long expirationMinutes) {
+            @Value("${huecko.jwt.expiration-minutes}") long expirationMinutes,
+            Environment environment) {
+
+        /* La clave de desarrollo está en application-dev.yml y en .env.example,
+           a la vista de cualquiera. Con ella se puede firmar un token con el id
+           de otra persona y entrar como ella. En producción no se arranca. */
+        if (environment.acceptsProfiles(Profiles.of("prod"))
+                && secret.startsWith(PREFIJO_CLAVE_DE_DESARROLLO)) {
+            throw new IllegalStateException(
+                    "HUECKO_JWT_SECRET sigue siendo la clave de desarrollo. Define una clave propia para producción.");
+        }
 
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < MIN_SECRET_BYTES) {

@@ -2,13 +2,21 @@ package com.huecko.backend.common.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -44,6 +52,59 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<Map<String, Object>> handleForbidden(ForbiddenException ex) {
         return build(HttpStatus.FORBIDDEN, "Acceso denegado", ex.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, Object>> handleUnauthorized(UnauthorizedException ex) {
+        return build(HttpStatus.UNAUTHORIZED, "No autenticado", ex.getMessage());
+    }
+
+    /*
+     * Errores del cliente que antes caían en el manejador genérico y salían
+     * como 500: un id que no es UUID en la ruta (`/api/planes/undefined`), un
+     * parámetro con otro tipo (`?umbral=abc`) o que falta.
+     */
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTipoIncorrecto(MethodArgumentTypeMismatchException ex) {
+        return build(HttpStatus.BAD_REQUEST, "Solicitud inválida",
+                "El valor de '" + ex.getName() + "' no tiene un formato válido.");
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleParametroFaltante(MissingServletRequestParameterException ex) {
+        return build(HttpStatus.BAD_REQUEST, "Solicitud inválida",
+                "Falta el parámetro obligatorio '" + ex.getParameterName() + "'.");
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleValidacionDeParametros(HandlerMethodValidationException ex) {
+        return build(HttpStatus.BAD_REQUEST, "Solicitud inválida", "Los parámetros enviados no son válidos.");
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleTipoDeContenido(HttpMediaTypeNotSupportedException ex) {
+        return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Tipo de contenido no soportado",
+                "Envía el cuerpo como application/json.");
+    }
+
+    /**
+     * Dos peticiones simultáneas que chocan con una restricción única (doble
+     * clic al votar o al avisar, dos registros con el mismo correo). No es un
+     * fallo del servidor: la segunda llegó tarde. Incluye `DuplicateKeyException`
+     * de Mongo, que hereda de esta.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConflictoDeDatos(DataIntegrityViolationException ex) {
+        log.warn("Conflicto de integridad: {}", ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.CONFLICT, "Conflicto",
+                "Otra operación modificó estos datos al mismo tiempo. Actualiza y vuelve a intentarlo.");
+    }
+
+    @ExceptionHandler({OptimisticLockingFailureException.class, PessimisticLockingFailureException.class})
+    public ResponseEntity<Map<String, Object>> handleConcurrencia(RuntimeException ex) {
+        return build(HttpStatus.CONFLICT, "Conflicto",
+                "Otra operación modificó estos datos al mismo tiempo. Actualiza y vuelve a intentarlo.");
     }
 
     /** Errores de @Valid: se juntan los campos en un solo mensaje legible. */
@@ -93,6 +154,13 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleUnexpected(Exception ex) {
+        // Las excepciones propias de Spring MVC ya traen su código (415, 406…):
+        // se respeta en vez de convertirlas todas en 500.
+        if (ex instanceof ErrorResponse respuesta && !respuesta.getStatusCode().is5xxServerError()) {
+            HttpStatus status = HttpStatus.valueOf(respuesta.getStatusCode().value());
+            return build(status, status.getReasonPhrase(), "La solicitud no se pudo procesar.");
+        }
+
         log.error("Error no controlado", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno",
                 "Ocurrió un error inesperado. Intenta de nuevo en unos minutos.");

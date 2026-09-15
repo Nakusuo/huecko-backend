@@ -86,7 +86,10 @@ public class DemoDataSeeder implements CommandLineRunner {
 
     /** Un grupo con Alex de organizador y Diana de miembro, para que el Módulo 2 tenga con qué trabajar. */
     private void asegurarGrupo(Usuario organizador, Usuario miembro) {
-        Grupo grupo = grupoRepository.findByNombreIgnoreCase(NOMBRE_GRUPO)
+        // Por nombre Y creador: los nombres no son únicos. Buscando solo por
+        // nombre, un grupo ajeno con el mismo nombre tumbaba el arranque o
+        // recibía a las cuentas de demo como integrantes.
+        Grupo grupo = grupoRepository.findFirstByNombreIgnoreCaseAndCreadoPor_Id(NOMBRE_GRUPO, organizador.getId())
                 .orElseGet(() -> grupoRepository.save(Grupo.builder()
                         .nombre(NOMBRE_GRUPO)
                         .descripcion("Coordinación de avances, sustentaciones y sesiones de trabajo.")

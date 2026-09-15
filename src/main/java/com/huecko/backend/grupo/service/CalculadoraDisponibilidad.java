@@ -88,9 +88,14 @@ public class CalculadoraDisponibilidad {
         for (int dia = 1; dia <= DIAS; dia++) {
             for (int hora = HORA_DESDE; hora < HORA_HASTA; hora++) {
                 int disponibles = total - ocupados.get(dia - 1).get(hora - HORA_DESDE).size();
-                int porcentaje = Math.round(disponibles * 100f / total);
+                /* Enteros y hacia abajo. Con el redondeo, 6 de 11 (54,5 %) se
+                   mostraba como 55 y cumplía un umbral del 55 % que en realidad
+                   no alcanza; y esa casilla podía acabar en una propuesta de
+                   plan. Se decide con la fracción exacta, sin porcentajes. */
+                int porcentaje = disponibles * 100 / total;
+                boolean cumple = disponibles * 100 >= umbral * total;
                 celdas.add(new CeldaDisponibilidadResponse(
-                        dia, hora, disponibles, total, porcentaje, porcentaje >= umbral));
+                        dia, hora, disponibles, total, porcentaje, cumple));
             }
         }
 

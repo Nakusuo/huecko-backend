@@ -1,5 +1,6 @@
 package com.huecko.backend.postgres.entity;
 
+import com.huecko.backend.common.ZonaHoraria;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -106,5 +107,18 @@ public class Plan {
     /** La votación sigue viva: ni cerrada ni vencida. */
     public boolean aceptaVotos(Instant ahora) {
         return estado == Estado.PROPUESTO && plazoVotacion.isAfter(ahora);
+    }
+
+    /**
+     * `true` si la ventana confirmada ya acabó. Avisar de un retraso o de una
+     * ausencia en un plan de la semana pasada no tiene sentido, y una ausencia
+     * crítica podía abrir una votación que cancelara un evento ya ocurrido.
+     */
+    public boolean yaTermino(Instant ahora) {
+        if (ventanaConfirmada == null) {
+            return false;
+        }
+        return !ZonaHoraria.instante(ventanaConfirmada.getFecha(), ventanaConfirmada.getHoraFin())
+                .isAfter(ahora);
     }
 }

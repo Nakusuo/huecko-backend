@@ -3,11 +3,13 @@ package com.huecko.backend.imprevisto.service;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.imprevisto.dto.ImprevistoDtos;
 import com.huecko.backend.mongo.document.VotacionExpres;
+import com.huecko.backend.mongo.repository.VotacionExpresOperaciones;
 import com.huecko.backend.mongo.repository.VotacionExpresRepository;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -22,9 +24,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +61,7 @@ class ImprevistoServiceTest {
     private static final UUID PLAN = UUID.randomUUID();
 
     @Mock private VotacionExpresRepository votacionRepository;
+    @Mock private VotacionExpresOperaciones operaciones;
     @Mock private PlanRepository planRepository;
     @Mock private MiembroGrupoRepository miembroGrupoRepository;
     @Mock private UsuarioRepository usuarioRepository;
@@ -66,7 +73,7 @@ class ImprevistoServiceTest {
 
     @BeforeEach
     void preparar() {
-        servicio = new ImprevistoService(votacionRepository, planRepository,
+        servicio = new ImprevistoService(votacionRepository, operaciones, planRepository,
                 miembroGrupoRepository, usuarioRepository, new EvaluadorPorReglas(), notificador);
         ReflectionTestUtils.setField(servicio, "plazoMinutos", 60);
         ReflectionTestUtils.setField(servicio, "resultadoPorDefecto", VotacionExpres.Opcion.MANTENER);
@@ -216,13 +223,106 @@ class ImprevistoServiceTest {
     @DisplayName("Cerrar dos veces no vuelve a tocar el plan")
     void cerrarDosVecesNoRepite() {
         plan(Plan.Estado.CONFIRMADO, ana);
-        VotacionExpres ya = votacionAbierta(new LinkedHashMap<>());
-        ya.setEstado(VotacionExpres.Estado.CERRADA);
-        when(votacionRepository.findById("v-1")).thenReturn(Optional.of(ya));
+        // Otro proceso ya la marcó CERRADA: el reclamo atómico no devuelve nada.
+        when(operaciones.reclamarParaCerrar(eq("v-1"), any())).thenReturn(Optional.empty());
 
         servicio.cerrar("v-1");
 
         verify(planRepository, never()).save(any());
+        verify(notificador, never()).aGrupo(any(), any(), anyMap());
+    }
+
+    @Test
+    @DisplayName("Al cerrar se avisa al grupo del resultado")
+    void alCerrarSeAvisa() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        votacionEnCurso(votos(VotacionExpres.Opcion.CANCELAR));
+
+        servicio.cerrar("v-1");
+
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.VOTACION_EXPRES_CERRADA), anyMap());
+    }
+
+    @Test
+    @DisplayName("Si aplicar el resultado al plan falla, la votacion se reabre y no se avisa")
+    void siFallaElPlanSeReabre() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        votacionEnCurso(votos(VotacionExpres.Opcion.CANCELAR));
+        doThrow(new IllegalStateException("Postgres caído")).when(planRepository).save(any());
+
+        assertThatThrownBy(() -> servicio.cerrar("v-1")).isInstanceOf(IllegalStateException.class);
+
+        verify(operaciones).reabrir("v-1");
+        verify(notificador, never()).aGrupo(any(), eq(EventoTiempoReal.Tipo.VOTACION_EXPRES_CERRADA), anyMap());
+    }
+
+    @Test
+    @DisplayName("REAGENDAR quita la ventana confirmada: esa fecha ya no vale")
+    void reagendarQuitaLaFecha() {
+        Plan plan = plan(Plan.Estado.CONFIRMADO, ana);
+        plan.setVentanaConfirmada(VentanaPlan.builder()
+                .fecha(LocalDate.now().plusDays(3)).horaInicio(LocalTime.of(18, 0)).horaFin(LocalTime.of(20, 0))
+                .build());
+        votacionEnCurso(votos(VotacionExpres.Opcion.REAGENDAR));
+
+        servicio.cerrar("v-1");
+
+        assertThat(plan.getVentanaConfirmada()).isNull();
+    }
+
+    @Test
+    @DisplayName("Un plan cancelado mientras tanto no se resucita al cerrar la votacion")
+    void noSeResucitaUnPlanCancelado() {
+        Plan plan = plan(Plan.Estado.CANCELADO, ana);
+        votacionEnCurso(votos(VotacionExpres.Opcion.REAGENDAR));
+
+        servicio.cerrar("v-1");
+
+        assertThat(plan.getEstado()).isEqualTo(Plan.Estado.CANCELADO);
+    }
+
+    /* --- Reportar: guardas --- */
+
+    @Test
+    @DisplayName("Un plan que ya termino no admite imprevistos")
+    void planTerminado() {
+        Plan plan = plan(Plan.Estado.CONFIRMADO, ana);
+        plan.setVentanaConfirmada(VentanaPlan.builder()
+                .fecha(LocalDate.now().minusDays(2)).horaInicio(LocalTime.of(10, 0)).horaFin(LocalTime.of(12, 0))
+                .build());
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("terminó");
+    }
+
+    @Test
+    @DisplayName("Quien ya abrio una votacion en el plan no puede abrir otra")
+    void noSeReportaDosVeces() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+        when(votacionRepository.existsByPlanIdAndUsuarioReporta(PLAN.toString(), ana.getId().toString()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Ya reportaste");
+        verify(votacionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Dos avisos simultaneos: el indice unico frena la segunda votacion con un 400, no un 500")
+    void dosAvisosSimultaneos() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+        doThrow(new DuplicateKeyException("uniq_abierta_por_plan")).when(votacionRepository).save(any());
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("abierta");
+        verify(notificador, never()).aGrupo(any(), any(), anyMap());
     }
 
     /* --- Votar --- */
@@ -248,12 +348,32 @@ class ImprevistoServiceTest {
         VotacionExpres abierta = votacionAbierta(new LinkedHashMap<>());
         when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
                 .thenReturn(Optional.of(abierta));
+        // Simula la escritura atómica de Mongo: fija el voto de esa persona.
+        when(operaciones.registrarVoto(eq(PLAN.toString()), eq(bruno.getId().toString()), any(), any()))
+                .thenAnswer(i -> {
+                    abierta.getVotos().put(i.getArgument(1), i.getArgument(2));
+                    return Optional.of(abierta);
+                });
 
         servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.CANCELAR);
         var r = servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.MANTENER);
 
         assertThat(r.votosEmitidos()).isEqualTo(1);
         assertThat(r.miVoto()).isEqualTo(VotacionExpres.Opcion.MANTENER);
+    }
+
+    @Test
+    @DisplayName("Si la votacion se cerro justo antes de guardar el voto, se rechaza sin reabrirla")
+    void votoContraVotacionRecienCerrada() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(votacionAbierta(new LinkedHashMap<>())));
+        when(operaciones.registrarVoto(any(), any(), any(), any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.MANTENER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("cerró");
+        verify(votacionRepository, never()).save(any());
     }
 
     /* ------------------------------------------------------------------ */
@@ -292,8 +412,9 @@ class ImprevistoServiceTest {
                 .build();
     }
 
+    /** Una votación abierta que el cierre consigue reclamar (ver VotacionExpresOperaciones). */
     private void votacionEnCurso(Map<String, VotacionExpres.Opcion> votos) {
-        when(votacionRepository.findById("v-1")).thenReturn(Optional.of(votacionAbierta(votos)));
+        when(operaciones.reclamarParaCerrar(eq("v-1"), any())).thenReturn(Optional.of(votacionAbierta(votos)));
     }
 
     private Map<String, VotacionExpres.Opcion> votos(VotacionExpres.Opcion... opciones) {

@@ -249,7 +249,7 @@ ni Postgres, ni Mongo.
 | `docker: error during connect` | Docker Desktop está cerrado. Ábrelo y espera a que el icono diga *Running*. |
 | `Bind for 0.0.0.0:5432 failed: port is already allocated` | Ya tienes un Postgres ocupando ese puerto. Cambia `POSTGRES_PORT` en `.env` (por ejemplo a `5433`) y repite `docker compose up -d`. Lo mismo con `MONGO_PORT`. |
 | El backend arranca y muere con `Connection refused` a Postgres o Mongo | Las bases aún no terminaron de arrancar. Comprueba `docker compose ps` y espera a `healthy`. |
-| `Credenciales incorrectas` con el usuario de demo | El seeder no llegó a ejecutarse. Busca en el log la línea `Datos de demo listos`. Si no está, revisa que `huecko.seed.enabled` sea `true` y que no estés en el perfil `prod`. |
+| `Credenciales incorrectas` con el usuario de demo | El seeder no llegó a ejecutarse. Busca en el log la línea `Datos de demo listos`. Si no está, revisa que estés en el perfil `dev` (es el de por defecto): solo ese perfil enciende `huecko.seed.enabled`. |
 | La app carga pero sale *"No fue posible conectar con el backend"* | O el backend está apagado, o `.env.local` no tiene `VITE_API_URL=/api`, o no reiniciaste `npm run dev` tras editarlo. |
 | Entras pero el horario sale vacío | Sesión antigua con un token de otro usuario. Cierra sesión y vuelve a entrar. |
 | Error de CORS en la consola del navegador | Estás apuntando `VITE_API_URL` directo a `http://localhost:8080` en vez de a `/api`. Usa `/api` y deja que el proxy de Vite haga el trabajo, o añade el origen a `HUECKO_CORS_ORIGINS` en `.env`. |
