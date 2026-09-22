@@ -1,5 +1,6 @@
 package com.huecko.backend.imprevisto.dto;
 
+import com.huecko.backend.mongo.document.Ausencia;
 import com.huecko.backend.mongo.document.VotacionExpres;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -72,10 +73,19 @@ public final class ImprevistoDtos {
              * votación sigue ABIERTA y en plazo. El cliente oculta el panel de
              * voto con esto en vez de repetir la regla.
              */
-            boolean puedoVotar
+            boolean puedoVotar,
+            /**
+             * RF-18: lo que se aplica si la votación cierra sin quórum. Sale de
+             * la configuración (`huecko.imprevistos.resultado-por-defecto`), así
+             * que el cliente no puede darlo por sabido: si cambia aquí y la
+             * interfaz lo tiene fijo, promete al grupo un resultado que no va a
+             * ocurrir.
+             */
+            VotacionExpres.Opcion resultadoPorDefectoOpcion
     ) {
 
-        public static VotacionExpresResponse from(VotacionExpres v, String usuarioId) {
+        public static VotacionExpresResponse from(VotacionExpres v, String usuarioId,
+                                                  VotacionExpres.Opcion resultadoPorDefectoOpcion) {
             Map<VotacionExpres.Opcion, Integer> recuento = new java.util.EnumMap<>(VotacionExpres.Opcion.class);
             for (VotacionExpres.Opcion opcion : VotacionExpres.Opcion.values()) {
                 recuento.put(opcion, 0);
@@ -101,7 +111,24 @@ public final class ImprevistoDtos {
                     v.isResultadoPorDefecto(),
                     v.getEstado() == VotacionExpres.Estado.ABIERTA
                             && !usuarioId.equals(v.getUsuarioReporta())
-                            && (v.getExpiraEn() == null || v.getExpiraEn().isAfter(Instant.now())));
+                            && (v.getExpiraEn() == null || v.getExpiraEn().isAfter(Instant.now())),
+                    resultadoPorDefectoOpcion);
+        }
+    }
+
+    /** RF-19: una persona que no viene. Críticas y no críticas, en la misma lista. */
+    public record AusenciaResponse(
+            String usuarioId,
+            String nombreUsuario,
+            String motivo,
+            Instant reportadoEn,
+            /** `true` si abrió votación exprés (RF-17). */
+            boolean critica
+    ) {
+
+        public static AusenciaResponse from(Ausencia a) {
+            return new AusenciaResponse(
+                    a.getUsuarioId(), a.getNombreUsuario(), a.getMotivo(), a.getReportadoEn(), a.isCritica());
         }
     }
 }

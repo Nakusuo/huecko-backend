@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /** Módulo 5 (HU-13 a HU-16). */
@@ -38,6 +39,18 @@ public class ImprevistoController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(imprevistoService.reportar(yo.id(), planId, request.motivo()));
+    }
+
+    /**
+     * RF-19: quién ha avisado de que no viene, críticas y no críticas. Solo
+     * miembros del grupo; para el resto, el plan no existe.
+     */
+    @GetMapping("/planes/{planId}/ausencias")
+    public ResponseEntity<List<ImprevistoDtos.AusenciaResponse>> ausencias(
+            @AuthenticationPrincipal UsuarioAutenticado yo,
+            @PathVariable UUID planId) {
+
+        return ResponseEntity.ok(imprevistoService.ausencias(yo.id(), planId));
     }
 
     /** RF-17: votar. Cambiar de opinión sustituye el voto, de ahí el `PUT`. */
