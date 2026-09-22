@@ -97,11 +97,7 @@ public class PlanService {
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
 
         Instant ahora = Instant.now();
-        if (req.plazoVotacion().isBefore(ahora.plusSeconds(MINUTOS_MINIMOS_DE_PLAZO * 60L))) {
-            throw new BusinessException(
-                    "El plazo de votación debe dejar al menos " + MINUTOS_MINIMOS_DE_PLAZO
-                            + " minutos para votar");
-        }
+        exigirPlazoMinimo(req.plazoVotacion(), ahora);
 
         Grupo grupo = miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(grupoId, usuarioId)
                 .orElseThrow(() -> new NotFoundException("El grupo no existe o no perteneces a él"))
@@ -118,22 +114,86 @@ public class PlanService {
                 .creadoEn(ahora)
                 .build();
 
-        plan.setVentanas(construirVentanas(usuarioId, grupoId, plan, req.ventanas()));
+        plan.setVentanas(construirVentanasValidadas(usuarioId, grupoId, plan, req.plazoVotacion(), req.ventanas()));
+
+        return aRespuesta(planRepository.save(plan), usuarioId);
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Reagendar (Módulo 5, tras REAGENDAR)
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Reabre la votación de fecha de un plan EN_RECOORDINACION con ventanas
+     * nuevas. Sin esto, un REAGENDAR dejaba el plan en ese estado para siempre:
+     * no se podía votar, ni cerrar, ni reportar nada sobre él.
+     *
+     * Mismos permisos que cerrar, y mismas reglas que al proponer: las
+     * ventanas nuevas tienen que cumplir el umbral con los horarios de hoy, no
+     * con los de cuando se creó el plan.
+     */
+    @Transactional
+    public PlanResponse reagendar(UUID usuarioId, UUID planId, PlanRequests.Reagendar req) {
+        planRepository.bloquearPorId(planId);
+        Plan plan = planConAcceso(usuarioId, planId);
+        exigirCreadorUOrganizador(plan, usuarioId,
+                "Solo quien propuso el plan o un organizador del grupo puede reagendarlo");
+
+        if (plan.getEstado() != Plan.Estado.EN_RECOORDINACION) {
+            throw new BusinessException("Solo se puede reagendar un plan que está en recoordinación");
+        }
+        exigirPlazoMinimo(req.plazoVotacion(), Instant.now());
+
+        // Se valida todo antes de tocar el plan: si una ventana falla, el plan
+        // sigue exactamente como estaba.
+        List<VentanaPlan> nuevas = construirVentanasValidadas(
+                usuarioId, plan.getGrupo().getId(), plan, req.plazoVotacion(), req.ventanas());
+
+        // Los votos apuntan a las ventanas viejas; se borran antes de que el
+        // orphanRemoval se las lleve, o la clave foránea lo impediría.
+        votoVentanaRepository.deleteAll(votoVentanaRepository.findByPlanId(planId));
+        votoVentanaRepository.flush();
+
+        plan.setVentanaConfirmada(null);
+        // La misma colección, no una nueva: orphanRemoval solo borra lo que
+        // desaparece de la lista que Hibernate está vigilando.
+        plan.getVentanas().clear();
+        plan.getVentanas().addAll(nuevas);
+        plan.setPlazoVotacion(req.plazoVotacion());
+        plan.setEstado(Plan.Estado.PROPUESTO);
+        plan.setCerradoEn(null);
+
+        log.info("Plan {} reagendado con {} ventanas nuevas", planId, nuevas.size());
+        return aRespuesta(planRepository.save(plan), usuarioId);
+    }
+
+    private void exigirPlazoMinimo(Instant plazoVotacion, Instant ahora) {
+        if (plazoVotacion.isBefore(ahora.plusSeconds(MINUTOS_MINIMOS_DE_PLAZO * 60L))) {
+            throw new BusinessException(
+                    "El plazo de votación debe dejar al menos " + MINUTOS_MINIMOS_DE_PLAZO
+                            + " minutos para votar");
+        }
+    }
+
+    /** Las ventanas ya validadas y, además, comprobado que el plazo cierra antes de la primera. */
+    private List<VentanaPlan> construirVentanasValidadas(UUID usuarioId, UUID grupoId, Plan plan,
+                                                         Instant plazoVotacion,
+                                                         List<PlanRequests.Ventana> pedidas) {
+        List<VentanaPlan> ventanas = construirVentanas(usuarioId, grupoId, plan, pedidas);
 
         /* La votación tiene que terminar antes de que empiece la primera opción.
            Si no, el barrido cerraba después y confirmaba una fecha que ya había
            pasado (p. ej. plazo de 48 horas y una opción para mañana). */
-        Instant primeraOpcion = plan.getVentanas().stream()
+        Instant primeraOpcion = ventanas.stream()
                 .map(v -> ZonaHoraria.instante(v.getFecha(), v.getHoraInicio()))
                 .min(Instant::compareTo)
                 .orElseThrow();
-        if (req.plazoVotacion().isAfter(primeraOpcion)) {
+        if (plazoVotacion.isAfter(primeraOpcion)) {
             throw new BusinessException(
                     "La votación debe cerrar antes de que empiece la primera opción. Elige un plazo más corto "
                             + "o fechas más adelante.");
         }
-
-        return aRespuesta(planRepository.save(plan), usuarioId);
+        return ventanas;
     }
 
     /**
@@ -165,6 +225,18 @@ public class PlanService {
             }
             if (!vistas.add(pedida.fecha() + "|" + pedida.horaInicio() + "|" + pedida.horaFin())) {
                 throw new BusinessException("Hay dos ventanas idénticas: cada opción debe ser distinta");
+            }
+            // Dos opciones que comparten un rato del mismo día reparten el voto
+            // entre casi lo mismo, y la «ganadora» puede ser la peor de las dos.
+            for (VentanaPlan previa : ventanas) {
+                if (previa.getFecha().equals(pedida.fecha())
+                        && pedida.horaInicio().isBefore(previa.getHoraFin())
+                        && previa.getHoraInicio().isBefore(pedida.horaFin())) {
+                    throw new BusinessException(
+                            "Las ventanas del " + pedida.fecha() + " de " + previa.getHoraInicio() + " a "
+                                    + previa.getHoraFin() + " y de " + pedida.horaInicio() + " a "
+                                    + pedida.horaFin() + " se solapan: cada opción debe ser un horario distinto");
+                }
             }
 
             DisponibilidadResponse cruce = cruces.computeIfAbsent(
@@ -301,17 +373,9 @@ public class PlanService {
     public PlanResponse cerrarManualmente(UUID usuarioId, UUID planId) {
         planRepository.bloquearPorId(planId);
         Plan plan = planConAcceso(usuarioId, planId);
+        exigirCreadorUOrganizador(plan, usuarioId,
+                "Solo quien propuso el plan o un organizador del grupo puede cerrar la votación");
 
-        boolean esCreador = plan.getCreadoPor().getId().equals(usuarioId);
-        boolean esOrganizador = miembroGrupoRepository
-                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
-                .map(m -> m.getRol() == MiembroGrupo.Rol.ORGANIZADOR)
-                .orElse(false);
-
-        if (!esCreador && !esOrganizador) {
-            throw new ForbiddenException(
-                    "Solo quien propuso el plan o un organizador del grupo puede cerrar la votación");
-        }
         if (plan.getEstado() != Plan.Estado.PROPUESTO) {
             throw new BusinessException("Esta votación ya estaba cerrada");
         }
@@ -348,6 +412,18 @@ public class PlanService {
     /* ------------------------------------------------------------------ *
      * Apoyo
      * ------------------------------------------------------------------ */
+
+    private void exigirCreadorUOrganizador(Plan plan, UUID usuarioId, String mensaje) {
+        boolean esCreador = plan.getCreadoPor().getId().equals(usuarioId);
+        boolean esOrganizador = miembroGrupoRepository
+                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
+                .map(m -> m.getRol() == MiembroGrupo.Rol.ORGANIZADOR)
+                .orElse(false);
+
+        if (!esCreador && !esOrganizador) {
+            throw new ForbiddenException(mensaje);
+        }
+    }
 
     private MiembroGrupo exigirMiembro(UUID usuarioId, UUID grupoId) {
         return miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(grupoId, usuarioId)
