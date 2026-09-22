@@ -58,10 +58,21 @@ public final class ImprevistoDtos {
             /** Lo que votó quien pregunta, o nulo si aún no votó. */
             VotacionExpres.Opcion miVoto,
             int votosEmitidos,
+            /**
+             * Cuántos pueden votar: los integrantes del grupo al abrirse la
+             * votación MENOS quien reporta, que no vota. Es el denominador de
+             * «X de N han votado»; con el total, la barra nunca llegaba al final.
+             */
             int miembrosDelGrupo,
             Instant expiraEn,
             VotacionExpres.Opcion resultado,
-            boolean resultadoPorDefecto
+            boolean resultadoPorDefecto,
+            /**
+             * Si quien pregunta puede votar ahora: no es quien reporta y la
+             * votación sigue ABIERTA y en plazo. El cliente oculta el panel de
+             * voto con esto en vez de repetir la regla.
+             */
+            boolean puedoVotar
     ) {
 
         public static VotacionExpresResponse from(VotacionExpres v, String usuarioId) {
@@ -84,10 +95,13 @@ public final class ImprevistoDtos {
                     recuento,
                     v.getVotos().get(usuarioId),
                     v.getVotos().size(),
-                    v.getMiembrosDelGrupo(),
+                    v.votantesPosibles(),
                     v.getExpiraEn(),
                     v.getResultado(),
-                    v.isResultadoPorDefecto());
+                    v.isResultadoPorDefecto(),
+                    v.getEstado() == VotacionExpres.Estado.ABIERTA
+                            && !usuarioId.equals(v.getUsuarioReporta())
+                            && (v.getExpiraEn() == null || v.getExpiraEn().isAfter(Instant.now())));
         }
     }
 }
