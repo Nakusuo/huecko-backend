@@ -1,5 +1,6 @@
 package com.huecko.backend.tiemporeal;
 
+import com.huecko.backend.plan.event.PlanCambiadoEvent;
 import com.huecko.backend.plan.event.PlanCerradoEvent;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.tiemporeal.dto.EventoTiempoReal;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Map;
@@ -73,6 +75,47 @@ class NotificacionesPlanListenerTest {
         Map<String, Object> datos = datosPublicados(EventoTiempoReal.Tipo.PLAN_CANCELADO);
 
         assertThat(datos).containsKey("motivo").doesNotContainKey("fecha");
+    }
+
+    @Test
+    @DisplayName("PLAN_PROPUESTO lleva el plan, quien lo propuso y el plazo de votación")
+    void planPropuesto() {
+        UUID ana = UUID.randomUUID();
+        Instant plazo = Instant.parse("2026-09-22T18:00:00Z");
+        listener.alCambiarElPlan(new PlanCambiadoEvent(
+                PlanCambiadoEvent.Cambio.PROPUESTO, GRUPO, PLAN, "Cena", ana, plazo));
+
+        assertThat(datosPublicados(EventoTiempoReal.Tipo.PLAN_PROPUESTO))
+                .containsEntry("planId", PLAN.toString())
+                .containsEntry("titulo", "Cena")
+                .containsEntry("usuarioId", ana.toString())
+                .containsEntry("plazoVotacion", "2026-09-22T18:00:00Z");
+    }
+
+    @Test
+    @DisplayName("PLAN_REAGENDADO lleva el plazo nuevo")
+    void planReagendado() {
+        UUID ana = UUID.randomUUID();
+        listener.alCambiarElPlan(new PlanCambiadoEvent(
+                PlanCambiadoEvent.Cambio.REAGENDADO, GRUPO, PLAN, "Cena", ana,
+                Instant.parse("2026-09-25T10:00:00Z")));
+
+        assertThat(datosPublicados(EventoTiempoReal.Tipo.PLAN_REAGENDADO))
+                .containsEntry("usuarioId", ana.toString())
+                .containsEntry("plazoVotacion", "2026-09-25T10:00:00Z");
+    }
+
+    @Test
+    @DisplayName("VOTO_ACTUALIZADO lleva el plan y quien votó, nunca qué ventana")
+    void votoActualizado() {
+        UUID bruno = UUID.randomUUID();
+        listener.alCambiarElPlan(new PlanCambiadoEvent(
+                PlanCambiadoEvent.Cambio.VOTO_ACTUALIZADO, GRUPO, PLAN, "Cena", bruno,
+                Instant.parse("2026-09-25T10:00:00Z")));
+
+        assertThat(datosPublicados(EventoTiempoReal.Tipo.VOTO_ACTUALIZADO))
+                .containsOnlyKeys("planId", "titulo", "usuarioId")
+                .containsEntry("usuarioId", bruno.toString());
     }
 
     @SuppressWarnings("unchecked")
