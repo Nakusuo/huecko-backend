@@ -27,6 +27,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -107,7 +108,9 @@ class ImprevistoServiceTest {
 
         assertThat(r.criticidad()).isEqualTo(VotacionExpres.Criticidad.CRITICA);
         assertThat(r.votacion()).isNotNull();
-        assertThat(r.votacion().miembrosDelGrupo()).isEqualTo(5);
+        // Cinco integrantes, pero quien reporta no vota.
+        assertThat(r.votacion().miembrosDelGrupo()).isEqualTo(4);
+        assertThat(r.votacion().puedoVotar()).isFalse();
         verify(notificador).aGrupo(eq(GRUPO),
                 eq(EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA), anyMap());
     }
@@ -264,7 +267,7 @@ class ImprevistoServiceTest {
         plan.setVentanaConfirmada(VentanaPlan.builder()
                 .fecha(LocalDate.now().plusDays(3)).horaInicio(LocalTime.of(18, 0)).horaFin(LocalTime.of(20, 0))
                 .build());
-        votacionEnCurso(votos(VotacionExpres.Opcion.REAGENDAR));
+        votacionEnCurso(votos(VotacionExpres.Opcion.REAGENDAR, VotacionExpres.Opcion.REAGENDAR));
 
         servicio.cerrar("v-1");
 
@@ -430,7 +433,172 @@ class ImprevistoServiceTest {
         assertThat(contenido).doesNotContain("CANCELAR");
     }
 
+    /* --- Quien reporta, quórum y cierre anticipado --- */
+
+    @Test
+    @DisplayName("Quien reporta el imprevisto no vota en su propia votacion")
+    void quienReportaNoVota() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(votacionAbierta(new LinkedHashMap<>())));
+
+        assertThatThrownBy(() -> servicio.votar(ana.getId(), PLAN, VotacionExpres.Opcion.CANCELAR))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Quien reporta el imprevisto no vota");
+        verify(operaciones, never()).registrarVoto(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("RF-18: un solo voto en un grupo de cinco no llega al quorum y se aplica el por defecto")
+    void unVotoNoEsQuorum() {
+        Plan plan = plan(Plan.Estado.CONFIRMADO, ana);
+        votacionEnCurso(votos(VotacionExpres.Opcion.CANCELAR));
+
+        servicio.cerrar("v-1");
+
+        assertThat(plan.getEstado()).isEqualTo(Plan.Estado.CONFIRMADO);
+        VotacionExpres cerrada = capturarVotacionGuardada();
+        assertThat(cerrada.getResultado()).isEqualTo(VotacionExpres.Opcion.MANTENER);
+        assertThat(cerrada.isResultadoPorDefecto()).isTrue();
+    }
+
+    @Test
+    @DisplayName("En un grupo de dos basta el voto del unico que puede votar")
+    void enGrupoDeDosBastaUnVoto() {
+        Plan plan = plan(Plan.Estado.CONFIRMADO, ana);
+        VotacionExpres votacion = votacionAbierta(votos(VotacionExpres.Opcion.CANCELAR));
+        votacion.setMiembrosDelGrupo(2);
+        when(operaciones.reclamarParaCerrar(eq("v-1"), any())).thenReturn(Optional.of(votacion));
+
+        servicio.cerrar("v-1");
+
+        assertThat(plan.getEstado()).isEqualTo(Plan.Estado.CANCELADO);
+        assertThat(capturarVotacionGuardada().isResultadoPorDefecto()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Cuando han votado todos los que pueden, la votacion se cierra en el acto")
+    void cierreAnticipadoCuandoVotanTodos() {
+        Plan plan = plan(Plan.Estado.CONFIRMADO, ana);
+        Usuario carla = Usuario.builder().id(UUID.randomUUID()).nombre("Carla").build();
+        // Tres integrantes: Ana reporta, votan Bruno y Carla.
+        VotacionExpres abierta = votacionAbierta(new LinkedHashMap<>(Map.of(
+                bruno.getId().toString(), VotacionExpres.Opcion.CANCELAR)));
+        abierta.setMiembrosDelGrupo(3);
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(abierta));
+        when(operaciones.registrarVoto(eq(PLAN.toString()), eq(carla.getId().toString()), any(), any()))
+                .thenAnswer(i -> {
+                    abierta.getVotos().put(i.getArgument(1), i.getArgument(2));
+                    return Optional.of(abierta);
+                });
+        when(operaciones.reclamarParaCerrar(eq("v-1"), any())).thenAnswer(i -> {
+            abierta.setEstado(VotacionExpres.Estado.CERRADA);
+            return Optional.of(abierta);
+        });
+
+        var r = servicio.votar(carla.getId(), PLAN, VotacionExpres.Opcion.CANCELAR);
+
+        verify(operaciones).reclamarParaCerrar(eq("v-1"), any());
+        assertThat(plan.getEstado()).isEqualTo(Plan.Estado.CANCELADO);
+        assertThat(r.estado()).isEqualTo(VotacionExpres.Estado.CERRADA);
+        assertThat(r.resultado()).isEqualTo(VotacionExpres.Opcion.CANCELAR);
+        assertThat(r.puedoVotar()).isFalse();
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.VOTACION_EXPRES_CERRADA), anyMap());
+    }
+
+    @Test
+    @DisplayName("Mientras falte alguien por votar, la votacion sigue abierta")
+    void sinTodosLosVotosNoSeCierra() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        VotacionExpres abierta = votacionAbierta(new LinkedHashMap<>());
+        abierta.setMiembrosDelGrupo(3);
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(abierta));
+        when(operaciones.registrarVoto(eq(PLAN.toString()), eq(bruno.getId().toString()), any(), any()))
+                .thenAnswer(i -> {
+                    abierta.getVotos().put(i.getArgument(1), i.getArgument(2));
+                    return Optional.of(abierta);
+                });
+
+        var r = servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.CANCELAR);
+
+        verify(operaciones, never()).reclamarParaCerrar(any(), any());
+        assertThat(r.estado()).isEqualTo(VotacionExpres.Estado.ABIERTA);
+        assertThat(r.puedoVotar()).isTrue();
+    }
+
+    /* --- Plazo de la votacion --- */
+
+    @Test
+    @DisplayName("Sin fecha cercana, la votacion dura el plazo configurado")
+    void plazoConfigurado() {
+        plan(Plan.Estado.CONFIRMADO, ana).setVentanaConfirmada(ventanaQueEmpiezaEn(Duration.ofDays(2)));
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+        Instant antes = Instant.now();
+
+        servicio.reportar(ana.getId(), PLAN, null);
+
+        assertThat(capturarVotacionGuardada().getExpiraEn())
+                .isBetween(antes.plus(Duration.ofMinutes(60)), Instant.now().plus(Duration.ofMinutes(60)));
+    }
+
+    @Test
+    @DisplayName("La votacion cierra como tarde cuando empieza el plan")
+    void plazoNoPasaDelInicioDelPlan() {
+        VentanaPlan ventana = ventanaQueEmpiezaEn(Duration.ofMinutes(20));
+        plan(Plan.Estado.CONFIRMADO, ana).setVentanaConfirmada(ventana);
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+
+        servicio.reportar(ana.getId(), PLAN, null);
+
+        assertThat(capturarVotacionGuardada().getExpiraEn())
+                .isEqualTo(com.huecko.backend.common.ZonaHoraria.instante(ventana.getFecha(), ventana.getHoraInicio()));
+    }
+
+    @Test
+    @DisplayName("Aunque el plan empiece ya, la votacion dura al menos cinco minutos")
+    void plazoMinimoDeCincoMinutos() {
+        plan(Plan.Estado.CONFIRMADO, ana).setVentanaConfirmada(ventanaQueEmpiezaEn(Duration.ofMinutes(1)));
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+        Instant antes = Instant.now();
+
+        servicio.reportar(ana.getId(), PLAN, null);
+
+        assertThat(capturarVotacionGuardada().getExpiraEn())
+                .isBetween(antes.plus(Duration.ofMinutes(5)), Instant.now().plus(Duration.ofMinutes(5)));
+    }
+
+    /* --- Respuesta --- */
+
+    @Test
+    @DisplayName("puedoVotar es falso para quien reporta y para una votacion cerrada")
+    void puedoVotar() {
+        VotacionExpres v = votacionAbierta(new LinkedHashMap<>());
+
+        assertThat(ImprevistoDtos.VotacionExpresResponse.from(v, bruno.getId().toString()).puedoVotar()).isTrue();
+        assertThat(ImprevistoDtos.VotacionExpresResponse.from(v, ana.getId().toString()).puedoVotar()).isFalse();
+
+        v.setEstado(VotacionExpres.Estado.CERRADA);
+        assertThat(ImprevistoDtos.VotacionExpresResponse.from(v, bruno.getId().toString()).puedoVotar()).isFalse();
+    }
+
     /* ------------------------------------------------------------------ */
+
+    /** Ventana confirmada que empieza dentro de `falta`, redondeada al minuto. */
+    private VentanaPlan ventanaQueEmpiezaEn(Duration falta) {
+        java.time.LocalDateTime inicio = java.time.LocalDateTime
+                .now(com.huecko.backend.common.ZonaHoraria.ZONA)
+                .plus(falta)
+                .truncatedTo(ChronoUnit.MINUTES);
+        return VentanaPlan.builder()
+                .fecha(inicio.toLocalDate())
+                .horaInicio(inicio.toLocalTime())
+                // Hasta el final del día: basta con que el plan no haya terminado.
+                .horaFin(LocalTime.of(23, 59))
+                .build();
+    }
 
     private Plan plan(Plan.Estado estado, Usuario creador) {
         Plan plan = Plan.builder()
