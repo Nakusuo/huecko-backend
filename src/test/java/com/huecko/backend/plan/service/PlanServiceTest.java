@@ -208,6 +208,34 @@ class PlanServiceTest {
     }
 
     @Test
+    @DisplayName("Dos ventanas del mismo día que se solapan se rechazan")
+    void lasVentanasSolapadasSeRechazan() {
+        soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 12, 100));
+
+        assertThatThrownBy(() -> servicio.crear(ana.getId(), GRUPO, crear(
+                ventana(MIERCOLES, "10:00", "12:00"),
+                ventana(MIERCOLES, "11:00", "13:00"))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("se solapan");
+        verify(planRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Ventanas contiguas del mismo día, o a la misma hora en días distintos, sí se aceptan")
+    void lasVentanasContiguasOEnOtroDiaSeAceptan() {
+        soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 12, 100), celda(3, 13, 100));
+
+        PlanResponse r = servicio.crear(ana.getId(), GRUPO, crear(
+                ventana(MIERCOLES, "10:00", "12:00"),
+                ventana(MIERCOLES, "12:00", "14:00"),
+                ventana(MIERCOLES.plusWeeks(1), "10:00", "12:00")));
+
+        assertThat(r.ventanas()).hasSize(3);
+    }
+
+    @Test
     @DisplayName("Una ventana en fecha pasada se rechaza")
     void laVentanaEnFechaPasadaSeRechaza() {
         soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
@@ -478,7 +506,136 @@ class PlanServiceTest {
         verify(planRepository, never()).save(any());
     }
 
+    /* ------------------------------------------------------------------ *
+     * Reagendar (tras un REAGENDAR de la votación exprés)
+     * ------------------------------------------------------------------ */
+
+    @Test
+    @DisplayName("Reagendar sustituye las ventanas, borra los votos y reabre la votación")
+    void reagendarReabreLaVotacion() {
+        Plan plan = planEnRecoordinacion();
+        List<VentanaPlan> coleccionOriginal = plan.getVentanas();
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 16, 100), celda(3, 17, 100));
+        List<VotoVentana> votosViejos = List.of(
+                VotoVentana.builder().ventana(plan.getVentanas().get(0)).usuario(bruno).build());
+        when(votoVentanaRepository.findByPlanId(PLAN)).thenReturn(votosViejos, List.of());
+
+        Instant plazo = Instant.now().plus(24, ChronoUnit.HOURS);
+        PlanResponse r = servicio.reagendar(ana.getId(), PLAN, new PlanRequests.Reagendar(plazo, List.of(
+                ventana(MIERCOLES.plusWeeks(1), "10:00", "12:00"),
+                ventana(MIERCOLES.plusWeeks(1), "16:00", "18:00"))));
+
+        verify(votoVentanaRepository).deleteAll(votosViejos);
+        assertThat(r.estado()).isEqualTo(Plan.Estado.PROPUESTO);
+        assertThat(r.ventanaConfirmadaId()).isNull();
+        assertThat(r.plazoVotacion()).isEqualTo(plazo);
+        assertThat(r.votacionAbierta()).isTrue();
+        assertThat(r.ventanas()).extracting(v -> v.fecha()).containsOnly(MIERCOLES.plusWeeks(1));
+        // Misma colección: orphanRemoval necesita ver desaparecer las viejas de ella.
+        assertThat(plan.getVentanas()).isSameAs(coleccionOriginal);
+        assertThat(plan.getCerradoEn()).isNull();
+    }
+
+    @Test
+    @DisplayName("Solo se reagenda un plan EN_RECOORDINACION")
+    void soloSeReagendaEnRecoordinacion() {
+        Plan plan = planAbierto(true);
+        plan.setEstado(Plan.Estado.CONFIRMADO);
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.ORGANIZADOR);
+
+        assertThatThrownBy(() -> servicio.reagendar(ana.getId(), PLAN, reagendar(
+                ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00"))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("recoordinación");
+        verify(planRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Un miembro raso que no propuso el plan no puede reagendarlo")
+    void elMiembroRasoNoReagenda() {
+        Plan plan = planEnRecoordinacion(); // creado por Ana
+        planExiste(plan, bruno);
+        soyMiembro(bruno, MiembroGrupo.Rol.MIEMBRO);
+
+        assertThatThrownBy(() -> servicio.reagendar(bruno.getId(), PLAN, reagendar(
+                ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00"))))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("El organizador del grupo sí puede reagendar un plan que no propuso")
+    void elOrganizadorReagenda() {
+        Plan plan = planEnRecoordinacion();
+        planExiste(plan, bruno);
+        soyMiembro(bruno, MiembroGrupo.Rol.ORGANIZADOR);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 16, 100), celda(3, 17, 100));
+
+        assertThat(servicio.reagendar(bruno.getId(), PLAN, reagendar(
+                ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00"))).estado())
+                .isEqualTo(Plan.Estado.PROPUESTO);
+    }
+
+    @Test
+    @DisplayName("Reagendar valida las ventanas igual que proponer y no toca el plan si fallan")
+    void reagendarValidaComoCrear() {
+        Plan plan = planEnRecoordinacion();
+        List<VentanaPlan> antes = List.copyOf(plan.getVentanas());
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 40), celda(3, 16, 100), celda(3, 17, 100));
+
+        assertThatThrownBy(() -> servicio.reagendar(ana.getId(), PLAN, reagendar(
+                ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00"))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("40%");
+
+        assertThat(plan.getEstado()).isEqualTo(Plan.Estado.EN_RECOORDINACION);
+        assertThat(plan.getVentanas()).containsExactlyElementsOf(antes);
+        verify(votoVentanaRepository, never()).deleteAll(any());
+    }
+
+    @Test
+    @DisplayName("Reagendar también rechaza ventanas solapadas, plazos cortos y plazos tras la primera opción")
+    void reagendarRechazaLoMismoQueCrear() {
+        Plan plan = planEnRecoordinacion();
+        planExiste(plan, ana);
+        soyMiembro(ana, MiembroGrupo.Rol.MIEMBRO);
+        cruceCon(80, celda(3, 10, 100), celda(3, 11, 100), celda(3, 12, 100),
+                celda(3, 16, 100), celda(3, 17, 100));
+
+        assertThatThrownBy(() -> servicio.reagendar(ana.getId(), PLAN, reagendar(
+                ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "11:00", "13:00"))))
+                .hasMessageContaining("se solapan");
+
+        assertThatThrownBy(() -> servicio.reagendar(ana.getId(), PLAN, new PlanRequests.Reagendar(
+                Instant.now().plus(1, ChronoUnit.MINUTES),
+                List.of(ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00")))))
+                .hasMessageContaining("minutos para votar");
+
+        Instant plazoTardio = MIERCOLES.plusDays(10).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        assertThatThrownBy(() -> servicio.reagendar(ana.getId(), PLAN, new PlanRequests.Reagendar(
+                plazoTardio,
+                List.of(ventana(MIERCOLES, "10:00", "12:00"), ventana(MIERCOLES, "16:00", "18:00")))))
+                .hasMessageContaining("primera opción");
+    }
+
     /* ------------------------------------------------------------------ */
+
+    /** Un plan al que una votación exprés le quitó la fecha (REAGENDAR). */
+    private Plan planEnRecoordinacion() {
+        Plan plan = planAbierto(true);
+        plan.setEstado(Plan.Estado.EN_RECOORDINACION);
+        plan.setPlazoVotacion(Instant.now().minus(3, ChronoUnit.DAYS));
+        plan.setCerradoEn(Instant.now().minus(2, ChronoUnit.DAYS));
+        return plan;
+    }
+
+    private PlanRequests.Reagendar reagendar(PlanRequests.Ventana... ventanas) {
+        return new PlanRequests.Reagendar(Instant.now().plus(24, ChronoUnit.HOURS), List.of(ventanas));
+    }
 
     private Usuario usuario(String nombre) {
         return Usuario.builder()

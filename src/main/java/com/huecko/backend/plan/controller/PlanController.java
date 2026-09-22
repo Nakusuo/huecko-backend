@@ -78,4 +78,15 @@ public class PlanController {
                                                @PathVariable UUID planId) {
         return ResponseEntity.ok(planService.cerrarManualmente(yo.id(), planId));
     }
+
+    /**
+     * Módulo 5: tras una votación exprés que decide REAGENDAR, el plan queda
+     * EN_RECOORDINACION. Aquí se proponen ventanas nuevas y vuelve a votarse.
+     */
+    @PostMapping("/planes/{planId}/reagendar")
+    public ResponseEntity<PlanResponse> reagendar(@AuthenticationPrincipal UsuarioAutenticado yo,
+                                                  @PathVariable UUID planId,
+                                                  @Valid @RequestBody PlanRequests.Reagendar request) {
+        return ResponseEntity.ok(planService.reagendar(yo.id(), planId, request));
+    }
 }
