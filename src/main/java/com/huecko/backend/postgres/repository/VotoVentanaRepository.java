@@ -1,5 +1,6 @@
 package com.huecko.backend.postgres.repository;
 
+import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.VotoVentana;
 import com.huecko.backend.postgres.entity.VotoVentanaId;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,4 +21,9 @@ public interface VotoVentanaRepository extends JpaRepository<VotoVentana, VotoVe
 
     @Query("select v from VotoVentana v where v.ventana.plan.id = :planId and v.usuario.id = :usuarioId")
     List<VotoVentana> findByPlanIdAndUsuarioId(UUID planId, UUID usuarioId);
+
+    /** Votos de una persona en los planes de un grupo que siguen en un estado dado. */
+    @Query("select v from VotoVentana v where v.usuario.id = :usuarioId "
+            + "and v.ventana.plan.grupo.id = :grupoId and v.ventana.plan.estado = :estado")
+    List<VotoVentana> findByUsuarioEnGrupoConEstado(UUID usuarioId, UUID grupoId, Plan.Estado estado);
 }
