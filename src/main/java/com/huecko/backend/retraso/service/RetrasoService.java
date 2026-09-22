@@ -5,6 +5,7 @@ import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.AlertaRetraso;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
+import com.huecko.backend.mongo.repository.AusenciaRepository;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.entity.VentanaPlan;
@@ -44,6 +45,7 @@ public class RetrasoService {
     private final MiembroGrupoRepository miembroGrupoRepository;
     private final UsuarioRepository usuarioRepository;
     private final NotificadorTiempoReal notificador;
+    private final AusenciaRepository ausenciaRepository;
 
     /**
      * RF-12 y RF-13: registra el retraso y avisa al grupo.
@@ -56,6 +58,15 @@ public class RetrasoService {
     public RetrasoResponse reportar(UUID usuarioId, UUID planId, int minutosEstimados) {
         Plan plan = planConAcceso(usuarioId, planId);
         exigirConfirmado(plan);
+
+        // Quien ya dijo que no viene no llega tarde: el grupo vería a la misma
+        // persona en la fila de bajas y en la de puntualidad, y no sabría cuál
+        // de las dos creer. Al revés sí se permite, y la baja borra el retraso
+        // (ver ImprevistoService.reportar).
+        if (ausenciaRepository.existsByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString())) {
+            throw new BusinessException(
+                    "Ya avisaste de que no vas a este plan: no puedes avisar de un retraso");
+        }
 
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
@@ -116,13 +127,20 @@ public class RetrasoService {
 
     /* ------------------------------------------------------------------ */
 
+    /**
+     * Los mismos campos que RetrasoResponse, para que el cliente pueda
+     * actualizar la fila de puntualidad con el evento sin volver a pedirla.
+     */
     private Map<String, Object> datosDe(Plan plan, AlertaRetraso alerta) {
+        RetrasoResponse vista = RetrasoResponse.from(alerta);
         Map<String, Object> datos = new LinkedHashMap<>();
         datos.put("planId", plan.getId().toString());
         datos.put("tituloPlan", plan.getTitulo());
-        datos.put("usuarioId", alerta.getUsuarioId());
-        datos.put("nombreUsuario", alerta.getNombreUsuario());
-        datos.put("minutosEstimados", alerta.getMinutosEstimados());
+        datos.put("usuarioId", vista.usuarioId());
+        datos.put("nombreUsuario", vista.nombreUsuario());
+        datos.put("minutosEstimados", vista.minutosEstimados());
+        datos.put("corregido", vista.corregido());
+        datos.put("reportadoEn", vista.reportadoEn().toString());
         datos.put("retirado", false);
         return datos;
     }
