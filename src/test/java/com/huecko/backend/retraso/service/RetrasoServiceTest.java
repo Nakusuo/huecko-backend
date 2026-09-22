@@ -224,7 +224,54 @@ class RetrasoServiceTest {
                 .hasMessageContaining("terminó");
     }
 
+    @Test
+    @DisplayName("Con más de 24 h por delante no se puede avisar de un retraso")
+    void conMasDe24HorasNoSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        plan.setVentanaConfirmada(ventanaQueEmpiezaEn(java.time.Duration.ofHours(30)));
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, 10))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("24 horas previas");
+        verify(alertaRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Dentro de las 24 h previas sí se puede avisar")
+    void dentroDe24HorasSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        plan.setVentanaConfirmada(ventanaQueEmpiezaEn(java.time.Duration.ofHours(23)));
+
+        assertThat(servicio.reportar(ana.getId(), PLAN, 10).minutosEstimados()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("Con el plan ya empezado (y sin terminar) se sigue pudiendo avisar")
+    void conElPlanEmpezadoSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        java.time.LocalDateTime inicio = java.time.LocalDateTime
+                .now(com.huecko.backend.common.ZonaHoraria.ZONA).minusMinutes(10);
+        java.time.LocalDateTime fin = inicio.plusHours(3);
+        plan.setVentanaConfirmada(VentanaPlan.builder()
+                .fecha(fin.toLocalDate())
+                .horaInicio(fin.toLocalDate().equals(inicio.toLocalDate()) ? inicio.toLocalTime() : LocalTime.MIN)
+                .horaFin(fin.toLocalTime())
+                .build());
+
+        assertThat(servicio.reportar(ana.getId(), PLAN, 10).minutosEstimados()).isEqualTo(10);
+    }
+
     /* ------------------------------------------------------------------ */
+
+    private VentanaPlan ventanaQueEmpiezaEn(java.time.Duration falta) {
+        java.time.LocalDateTime inicio = java.time.LocalDateTime
+                .now(com.huecko.backend.common.ZonaHoraria.ZONA).plus(falta);
+        return VentanaPlan.builder()
+                .fecha(inicio.toLocalDate())
+                .horaInicio(inicio.toLocalTime())
+                .horaFin(LocalTime.of(23, 59, 59))
+                .build();
+    }
 
     private Plan planEnEstado(Plan.Estado estado) {
         Plan plan = Plan.builder()
