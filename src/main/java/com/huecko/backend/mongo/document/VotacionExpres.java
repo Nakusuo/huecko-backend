@@ -94,7 +94,11 @@ public class VotacionExpres {
     @Builder.Default
     private Map<String, Opcion> votos = new LinkedHashMap<>();
 
-    /** Cuántos podían votar cuando se abrió: el quórum se mide contra esto. */
+    /**
+     * Integrantes del grupo cuando se abrió, contando a quien reporta. Se
+     * guarda el total y no los votantes para no cambiar el significado de los
+     * documentos que ya existen; los votantes salen de {@link #votantesPosibles()}.
+     */
     private int miembrosDelGrupo;
 
     private Instant abiertaEn;
@@ -116,4 +120,22 @@ public class VotacionExpres {
      */
     @Indexed(name = "idx_purga_ttl", expireAfterSeconds = 0)
     private Instant purgarEn;
+
+    /** Quien reporta no vota: decidir sobre su propia ausencia no le corresponde. */
+    public int votantesPosibles() {
+        return Math.max(miembrosDelGrupo - 1, 0);
+    }
+
+    /**
+     * RF-18: votos mínimos para que el resultado cuente. Dos, o todos los que
+     * pueden votar si son menos: un único voto en un grupo de seis no es el
+     * grupo decidiendo, pero en un grupo de dos es todo el que puede opinar.
+     */
+    public int quorum() {
+        return Math.min(2, votantesPosibles());
+    }
+
+    public int votosEmitidos() {
+        return votos == null ? 0 : votos.size();
+    }
 }
