@@ -10,16 +10,21 @@ import com.huecko.backend.grupo.dto.GrupoResponse;
 import com.huecko.backend.grupo.dto.MiembroResponse;
 import com.huecko.backend.mongo.document.BloqueHorario;
 import com.huecko.backend.mongo.repository.BloqueHorarioRepository;
+import com.huecko.backend.mongo.repository.VotacionExpresOperaciones;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
+import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.GrupoRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
+import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
+import com.huecko.backend.postgres.repository.VotoVentanaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -41,6 +46,9 @@ public class GrupoService {
     private final UsuarioRepository usuarioRepository;
     private final BloqueHorarioRepository bloqueHorarioRepository;
     private final CalculadoraDisponibilidad calculadora;
+    private final PlanRepository planRepository;
+    private final VotoVentanaRepository votoVentanaRepository;
+    private final VotacionExpresOperaciones votacionExpresOperaciones;
 
     /* ------------------------------------------------------------------ *
      * Grupos
@@ -175,7 +183,13 @@ public class GrupoService {
      * lista se consulta por membresía. Si tiene planes no se borra: las
      * votaciones y planes cuelgan de él, y el borrado fallaba por la clave
      * foránea dejando a la persona atrapada en el grupo. Queda sin integrantes,
-     * que a efectos de la app es lo mismo.
+     * que a efectos de la app es lo mismo, y sus planes aún en votación se
+     * cancelan: nadie va a votarlos ni a cerrarlos, y el barrido los acabaría
+     * confirmando con los votos de gente que ya no está.
+     *
+     * Quien se va se lleva sus votos de lo que sigue abierto (planes en
+     * votación y votaciones exprés). Los de planes ya cerrados se quedan: son
+     * el histórico de cómo se decidió.
      */
     @Transactional
     public void salir(UUID usuarioId, UUID grupoId, UUID objetivoId) {
@@ -198,10 +212,30 @@ public class GrupoService {
         }
 
         miembroGrupoRepository.delete(objetivo);
+        votoVentanaRepository.deleteAll(votoVentanaRepository.findByUsuarioEnGrupoConEstado(
+                objetivoId, grupoId, Plan.Estado.PROPUESTO));
 
-        if (miembroGrupoRepository.countByGrupo_Id(grupoId) == 0 && !grupoRepository.tienePlanes(grupoId)) {
-            grupoRepository.delete(objetivo.getGrupo());
+        if (miembroGrupoRepository.countByGrupo_Id(grupoId) == 0) {
+            if (grupoRepository.tienePlanes(grupoId)) {
+                cancelarPlanesEnVotacion(grupoId);
+            } else {
+                grupoRepository.delete(objetivo.getGrupo());
+            }
         }
+
+        // Va a Mongo, fuera de la transacción. Se hace al final para que un
+        // fallo de las comprobaciones de arriba no le quite el voto a nadie.
+        votacionExpresOperaciones.retirarVotosDe(grupoId.toString(), objetivoId.toString());
+    }
+
+    private void cancelarPlanesEnVotacion(UUID grupoId) {
+        Instant ahora = Instant.now();
+        List<Plan> abiertos = planRepository.findByGrupo_IdAndEstado(grupoId, Plan.Estado.PROPUESTO);
+        abiertos.forEach(plan -> {
+            plan.setEstado(Plan.Estado.CANCELADO);
+            plan.setCerradoEn(ahora);
+        });
+        planRepository.saveAll(abiertos);
     }
 
     /* ------------------------------------------------------------------ *
@@ -210,6 +244,10 @@ public class GrupoService {
 
     /**
      * RF-05 / RF-06 / RF-07.
+     *
+     * El umbral de la consulta tiene los mismos límites (50–100) que el que se
+     * guarda al crear o editar el grupo: con un 10 % el heatmap sugería huecos
+     * que el propio grupo no podría adoptar como ajuste.
      *
      * `umbral` permite mirar el heatmap con otro porcentaje sin tocar el ajuste
      * del grupo — el organizador prueba al 70 % antes de decidir si lo cambia.
@@ -221,10 +259,12 @@ public class GrupoService {
                                                  Integer umbral, LocalDate semana) {
         Grupo grupo = exigirMiembro(usuarioId, grupoId).getGrupo();
 
-        int umbralEfectivo = umbral == null ? grupo.getUmbralDisponibilidad() : umbral;
-        if (umbralEfectivo < 1 || umbralEfectivo > 100) {
-            throw new BusinessException("El umbral debe estar entre 1 y 100");
+        // Solo se valida el de la petición: el guardado ya pasó por las mismas
+        // reglas, y rechazarlo aquí dejaría sin heatmap a un grupo antiguo.
+        if (umbral != null && (umbral < Grupo.UMBRAL_MINIMO || umbral > 100)) {
+            throw new BusinessException("El umbral debe estar entre " + Grupo.UMBRAL_MINIMO + " y 100");
         }
+        int umbralEfectivo = umbral == null ? grupo.getUmbralDisponibilidad() : umbral;
 
         List<UUID> miembros = miembroGrupoRepository.findUsuarioIdsByGrupoId(grupoId);
 

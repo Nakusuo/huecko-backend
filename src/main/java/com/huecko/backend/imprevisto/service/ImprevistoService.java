@@ -1,5 +1,6 @@
 package com.huecko.backend.imprevisto.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.imprevisto.dto.ImprevistoDtos;
@@ -55,6 +56,9 @@ public class ImprevistoService {
     private final UsuarioRepository usuarioRepository;
     private final EvaluadorCriticidad evaluador;
     private final NotificadorTiempoReal notificador;
+
+    /** Nadie vota en menos de esto, por cerca que esté el plan. */
+    private static final Duration PLAZO_MINIMO = Duration.ofMinutes(5);
 
     /** RF-17: «plazo corto». Una hora es el ejemplo del documento. */
     @Value("${huecko.imprevistos.plazo-minutos:60}")
@@ -135,7 +139,7 @@ public class ImprevistoService {
                     .votos(new LinkedHashMap<>())
                     .miembrosDelGrupo((int) miembroGrupoRepository.countByGrupo_Id(plan.getGrupo().getId()))
                     .abiertaEn(ahora)
-                    .expiraEn(ahora.plus(Duration.ofMinutes(plazoMinutos)))
+                    .expiraEn(calcularExpiracion(plan, ahora))
                     .build());
         } catch (DuplicateKeyException ex) {
             // Otro aviso abrió la votación en el mismo instante (índice único
@@ -152,11 +156,34 @@ public class ImprevistoService {
                 ImprevistoDtos.VotacionExpresResponse.from(votacion, usuarioId.toString()));
     }
 
+    /**
+     * El plazo configurado, pero sin pasar del inicio del plan: una votación
+     * que cierra cuando el plan ya empezó decide tarde, y un MANTENER por
+     * defecto llegaría con la gente ya en el sitio. Aun así se dejan al menos
+     * cinco minutos, o un aviso a última hora cerraría sin que nadie lo viera.
+     */
+    private Instant calcularExpiracion(Plan plan, Instant ahora) {
+        Instant limite = ahora.plus(Duration.ofMinutes(plazoMinutos));
+        if (plan.getVentanaConfirmada() != null) {
+            Instant inicio = ZonaHoraria.instante(
+                    plan.getVentanaConfirmada().getFecha(), plan.getVentanaConfirmada().getHoraInicio());
+            if (inicio.isBefore(limite)) {
+                limite = inicio;
+            }
+        }
+        Instant minimo = ahora.plus(PLAZO_MINIMO);
+        return limite.isBefore(minimo) ? minimo : limite;
+    }
+
     /* ------------------------------------------------------------------ *
      * Votar (RF-17)
      * ------------------------------------------------------------------ */
 
-    @Transactional(readOnly = true)
+    /**
+     * No es de solo lectura: si con este voto ya ha votado todo el que puede,
+     * la votación se cierra aquí mismo y el resultado se aplica al plan.
+     */
+    @Transactional
     public ImprevistoDtos.VotacionExpresResponse votar(UUID usuarioId, UUID planId,
                                                        VotacionExpres.Opcion opcion) {
         Plan plan = planConAcceso(usuarioId, planId);
@@ -165,6 +192,10 @@ public class ImprevistoService {
                 .findByPlanIdAndEstado(planId.toString(), VotacionExpres.Estado.ABIERTA)
                 .orElseThrow(() -> new NotFoundException(
                         "No hay ninguna votación exprés abierta para este plan"));
+
+        if (usuarioId.toString().equals(votacion.getUsuarioReporta())) {
+            throw new BusinessException("Quien reporta el imprevisto no vota");
+        }
 
         if (Instant.now().isAfter(votacion.getExpiraEn())) {
             // El barrido aún no ha pasado, pero el plazo ya venció: aceptar el
@@ -191,6 +222,16 @@ public class ImprevistoService {
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTO_EXPRES_ACTUALIZADO, datos);
 
+        // Cierre anticipado: si ya votaron todos, esperar al plazo solo retrasa
+        // una decisión que no va a cambiar. Pasa por el mismo cierre que el
+        // barrido, con su reclamo atómico, así que no se aplica dos veces.
+        if (guardada.votosEmitidos() >= guardada.votantesPosibles()) {
+            VotacionExpres cerrada = cerrarYDevolver(guardada.getId())
+                    .or(() -> votacionRepository.findById(guardada.getId()))
+                    .orElse(guardada);
+            return ImprevistoDtos.VotacionExpresResponse.from(cerrada, usuarioId.toString());
+        }
+
         return ImprevistoDtos.VotacionExpresResponse.from(guardada, usuarioId.toString());
     }
 
@@ -214,14 +255,19 @@ public class ImprevistoService {
     /**
      * Aplica el resultado de una votación exprés.
      *
-     * RF-18: sin ningún voto se aplica el resultado por defecto. «Sin quórum»
-     * se interpreta como «nadie votó», no como «votó menos de la mitad»: con
-     * un plazo de una hora, exigir mayoría del grupo cancelaría planes por
-     * simple falta de atención, que es justo lo contrario de lo que busca el
-     * módulo.
+     * RF-18: sin quórum se aplica el resultado por defecto. El quórum es de dos
+     * votos (o de todos los que pueden votar, si son menos; ver
+     * {@link VotacionExpres#quorum()}), no la mitad del grupo: con un plazo de
+     * una hora, exigir mayoría cancelaría planes por simple falta de atención,
+     * pero un único voto tampoco debería poder cancelar el plan de seis.
      */
     @Transactional
     public void cerrar(String votacionId) {
+        cerrarYDevolver(votacionId);
+    }
+
+    /** El cierre de verdad. Devuelve la votación cerrada, o vacío si ya la había cerrado otro. */
+    private Optional<VotacionExpres> cerrarYDevolver(String votacionId) {
         Instant ahora = Instant.now();
 
         // Se marca CERRADA de forma atómica antes de contar. Si ya lo estaba,
@@ -229,7 +275,7 @@ public class ImprevistoService {
         // aquí ningún voto nuevo entra, así que el recuento es definitivo.
         VotacionExpres votacion = operaciones.reclamarParaCerrar(votacionId, ahora).orElse(null);
         if (votacion == null) {
-            return;
+            return Optional.empty();
         }
 
         /*
@@ -259,15 +305,16 @@ public class ImprevistoService {
         }
 
         try {
-            boolean sinVotos = votacion.getVotos() == null || votacion.getVotos().isEmpty();
-            VotacionExpres.Opcion resultado = sinVotos
+            int emitidos = votacion.votosEmitidos();
+            boolean sinQuorum = emitidos == 0 || emitidos < votacion.quorum();
+            VotacionExpres.Opcion resultado = sinQuorum
                     ? resultadoPorDefecto
                     : masVotada(votacion.getVotos());
 
             votacion.setEstado(VotacionExpres.Estado.CERRADA);
             votacion.setCerradaEn(ahora);
             votacion.setResultado(resultado);
-            votacion.setResultadoPorDefecto(sinVotos);
+            votacion.setResultadoPorDefecto(sinQuorum);
             // Solo ahora se marca para purga: mientras estaba abierta, el índice
             // TTL la ignoraba porque este campo era nulo.
             votacion.setPurgarEn(ahora.plus(Duration.ofDays(diasPurga)));
@@ -276,7 +323,7 @@ public class ImprevistoService {
             aviso.set(aplicarAlPlan(votacion, resultado));
 
             log.info("Votación exprés {} cerrada con {}{}", votacionId, resultado,
-                    sinVotos ? " (por defecto, nadie votó)" : "");
+                    sinQuorum ? " (por defecto, sin quórum: " + emitidos + " voto(s))" : "");
         } catch (RuntimeException ex) {
             // Sin transacción no hay afterCompletion que la reabra.
             if (!conTransaccion) {
@@ -288,6 +335,7 @@ public class ImprevistoService {
         if (!conTransaccion) {
             avisarCierre(grupoId, aviso.get());
         }
+        return Optional.of(votacion);
     }
 
     private void avisarCierre(UUID grupoId, Map<String, Object> datos) {
