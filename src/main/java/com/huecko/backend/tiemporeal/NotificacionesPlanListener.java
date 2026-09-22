@@ -1,5 +1,6 @@
 package com.huecko.backend.tiemporeal;
 
+import com.huecko.backend.plan.event.PlanCambiadoEvent;
 import com.huecko.backend.plan.event.PlanCerradoEvent;
 import com.huecko.backend.tiemporeal.dto.EventoTiempoReal;
 import lombok.RequiredArgsConstructor;
@@ -49,5 +50,32 @@ public class NotificacionesPlanListener {
         // grupo esperando una fecha que ya no va a llegar.
         datos.put("motivo", "La votación cerró sin ningún voto");
         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.PLAN_CANCELADO, datos);
+    }
+
+    /**
+     * Plan propuesto, reagendado o con votos nuevos. También tras el commit,
+     * por lo mismo que el cierre: un aviso que sale antes de un rollback manda
+     * al grupo a buscar un plan, o un voto, que no existe.
+     *
+     * Solo se anuncia el cambio; cada cliente vuelve a pedir el plan, porque
+     * parte de la respuesta («mi voto») depende de quién pregunta.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alCambiarElPlan(PlanCambiadoEvent evento) {
+        Map<String, Object> datos = new LinkedHashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("titulo", evento.titulo());
+        datos.put("usuarioId", evento.usuarioId().toString());
+
+        EventoTiempoReal.Tipo tipo = switch (evento.cambio()) {
+            case PROPUESTO -> EventoTiempoReal.Tipo.PLAN_PROPUESTO;
+            case REAGENDADO -> EventoTiempoReal.Tipo.PLAN_REAGENDADO;
+            case VOTO_ACTUALIZADO -> EventoTiempoReal.Tipo.VOTO_ACTUALIZADO;
+        };
+        // El plazo solo tiene sentido cuando se abre (o reabre) la votación.
+        if (evento.cambio() != PlanCambiadoEvent.Cambio.VOTO_ACTUALIZADO && evento.plazoVotacion() != null) {
+            datos.put("plazoVotacion", evento.plazoVotacion().toString());
+        }
+        notificador.aGrupo(evento.grupoId(), tipo, datos);
     }
 }
