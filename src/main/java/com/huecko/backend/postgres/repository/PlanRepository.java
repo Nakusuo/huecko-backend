@@ -39,6 +39,8 @@ public interface PlanRepository extends JpaRepository<Plan, UUID> {
     @Query("select p from Plan p where p.id = :planId")
     Optional<Plan> bloquearPorId(UUID planId);
 
+    List<Plan> findByGrupo_IdAndEstado(UUID grupoId, Plan.Estado estado);
+
     /** RF-10: los que ya vencieron y siguen abiertos. Es lo que barre el cierre automatico. */
     List<Plan> findByEstadoAndPlazoVotacionLessThanEqual(Plan.Estado estado, Instant limite);
 }

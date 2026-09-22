@@ -50,6 +50,21 @@ public class VotacionExpresOperaciones {
     }
 
     /**
+     * Quita el voto de una persona de todas las votaciones abiertas de un
+     * grupo. Es para quien sale del grupo: su voto no debe decidir el futuro de
+     * un plan al que ya no va. Una sola orden por la misma razón que el resto
+     * de la clase: un `save` podría pisar un voto que entra a la vez.
+     */
+    public void retirarVotosDe(String grupoId, String usuarioId) {
+        Query query = Query.query(where("grupoId").is(grupoId)
+                .and("estado").is(VotacionExpres.Estado.ABIERTA)
+                .and("votos." + usuarioId).exists(true));
+        Update update = new Update().unset("votos." + usuarioId);
+
+        mongoTemplate.updateMulti(query, update, VotacionExpres.class);
+    }
+
+    /**
      * Marca la votación como CERRADA si seguía ABIERTA y la devuelve con los
      * votos definitivos. Vacío si otro proceso ya la cerró: así nunca se aplica
      * el resultado dos veces.

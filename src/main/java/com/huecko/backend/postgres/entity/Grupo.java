@@ -22,6 +22,12 @@ public class Grupo {
     /** Umbral por defecto: unanimidad (HU-05). El grupo puede bajarlo (HU-06). */
     public static final int UMBRAL_POR_DEFECTO = 100;
 
+    /**
+     * Por debajo de la mitad el umbral deja de describir al grupo. Es el mismo
+     * límite que validan GrupoRequests y la consulta de disponibilidad.
+     */
+    public static final int UMBRAL_MINIMO = 50;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
