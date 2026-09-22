@@ -37,6 +37,16 @@ public record EventoTiempoReal(
         AUSENCIA_REPORTADA,
         /** RF-17: baja crítica, se abre votación exprés. */
         VOTACION_EXPRES_ABIERTA,
+        /**
+         * RF-17: alguien votó y el recuento cambió.
+         *
+         * No lleva ni quién votó ni qué votó: el panel enseña el recuento a
+         * todo el grupo, pero «mi voto» es de cada uno, así que el cliente
+         * vuelve a pedir la votación en vez de reconstruirla del evento. Un
+         * topic es de todo el grupo y mandar los votos por él diría a cada
+         * miembro lo que votaron los demás (RNF-02).
+         */
+        VOTO_EXPRES_ACTUALIZADO,
         /** RF-17 y RF-18: la votación exprés terminó, por votos o por defecto. */
         VOTACION_EXPRES_CERRADA
     }

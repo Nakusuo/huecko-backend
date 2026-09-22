@@ -159,7 +159,7 @@ public class ImprevistoService {
     @Transactional(readOnly = true)
     public ImprevistoDtos.VotacionExpresResponse votar(UUID usuarioId, UUID planId,
                                                        VotacionExpres.Opcion opcion) {
-        planConAcceso(usuarioId, planId);
+        Plan plan = planConAcceso(usuarioId, planId);
 
         VotacionExpres votacion = votacionRepository
                 .findByPlanIdAndEstado(planId.toString(), VotacionExpres.Estado.ABIERTA)
@@ -178,6 +178,18 @@ public class ImprevistoService {
         VotacionExpres guardada = operaciones
                 .registrarVoto(planId.toString(), usuarioId.toString(), opcion, Instant.now())
                 .orElseThrow(() -> new BusinessException("La votación exprés ya cerró o venció"));
+
+        /* Sin este aviso, el panel de votación era lo único urgente de la app que
+           no se movía: el reloj corría, pero el recuento que veía cada miembro se
+           quedaba en el que había al abrir la pantalla, y solo se enteraba de la
+           realidad al cerrarse la votación. Solo se anuncia que cambió; cada
+           cliente vuelve a pedir su propia vista, porque «mi voto» depende de
+           quién pregunta y el topic lo lee el grupo entero (RNF-02). */
+        Map<String, Object> datos = new LinkedHashMap<>();
+        datos.put("planId", planId.toString());
+        datos.put("votosEmitidos", guardada.getVotos() == null ? 0 : guardada.getVotos().size());
+        notificador.aGrupo(plan.getGrupo().getId(),
+                EventoTiempoReal.Tipo.VOTO_EXPRES_ACTUALIZADO, datos);
 
         return ImprevistoDtos.VotacionExpresResponse.from(guardada, usuarioId.toString());
     }
