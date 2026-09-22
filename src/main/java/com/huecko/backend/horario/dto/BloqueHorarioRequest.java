@@ -41,7 +41,16 @@ public record BloqueHorarioRequest(
         @Size(max = 30, message = "El color no puede superar los 30 caracteres")
         String color,
 
-        /** Opcional. Si llega OCR, el bloque nace como BORRADOR (RF-03). */
-        BloqueHorario.Fuente fuente
+        /** Opcional. Si llega OCR, el bloque nace como BORRADOR (RF-03)... */
+        BloqueHorario.Fuente fuente,
+
+        /**
+         * ...salvo que llegue `true` aquí. El frontend ya enseña el resultado del
+         * OCR en su propio modal y el usuario lo revisa antes de guardar; sin
+         * esta marca el horario importado se quedaba en borrador y no contaba
+         * en la disponibilidad del grupo. Solo tiene efecto con fuente OCR: un
+         * bloque manual ya nace confirmado.
+         */
+        Boolean confirmado
 ) {
 }

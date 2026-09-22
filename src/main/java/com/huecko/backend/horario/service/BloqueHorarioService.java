@@ -24,9 +24,11 @@ public class BloqueHorarioService {
         validarCoherenciaTipo(req);
 
         // RF-02/RF-03: lo que llega marcado como OCR nace en BORRADOR y no cuenta
-        // como disponibilidad real hasta que el usuario lo confirma (RNF-06).
+        // como disponibilidad real hasta que el usuario lo confirma (RNF-06). Si
+        // el cliente ya lo revisó en su modal, llega con `confirmado` y se
+        // guarda directamente como confirmado.
         BloqueHorario.Fuente fuente = req.fuente() == null ? BloqueHorario.Fuente.MANUAL : req.fuente();
-        BloqueHorario.Estado estado = fuente == BloqueHorario.Fuente.OCR
+        BloqueHorario.Estado estado = fuente == BloqueHorario.Fuente.OCR && !Boolean.TRUE.equals(req.confirmado())
                 ? BloqueHorario.Estado.BORRADOR
                 : BloqueHorario.Estado.CONFIRMADO;
 
@@ -48,6 +50,7 @@ public class BloqueHorarioService {
                 .actualizadoEn(ahora)
                 .build();
 
+        exigirSinSolapes(usuarioId, bloque);
         return BloqueHorarioResponse.from(bloqueHorarioRepository.save(bloque));
     }
 
@@ -67,8 +70,12 @@ public class BloqueHorarioService {
         bloque.setColor(req.color());
         // Al editar/confirmar, un borrador de OCR pasa a confirmado (RF-03).
         // La `fuente` original NO se toca: sigue siendo trazable que vino de OCR.
+        // Confirmar un borrador pasa por aquí, así que también es donde un
+        // horario importado por OCR se choca con lo que ya había.
         bloque.setEstado(BloqueHorario.Estado.CONFIRMADO);
         bloque.setActualizadoEn(Instant.now());
+
+        exigirSinSolapes(usuarioId, bloque);
 
         return BloqueHorarioResponse.from(bloqueHorarioRepository.save(bloque));
     }
@@ -109,6 +116,24 @@ public class BloqueHorarioService {
             throw new ForbiddenException("El bloque no pertenece al usuario autenticado");
         }
         return bloque;
+    }
+
+    /**
+     * Un bloque confirmado no puede pisar a otro confirmado del mismo usuario.
+     * Dos clases a la vez son casi siempre un error al teclear, y un duplicado
+     * exacto (doble clic, importar dos veces la misma foto) pintaba el bloque
+     * dos veces en la rejilla. Los borradores no se comparan: son justo lo que
+     * el usuario todavía tiene que revisar.
+     */
+    private void exigirSinSolapes(String usuarioId, BloqueHorario candidato) {
+        if (candidato.getEstado() != BloqueHorario.Estado.CONFIRMADO) {
+            return;
+        }
+        List<BloqueHorario> confirmados =
+                bloqueHorarioRepository.findByUsuarioIdAndEstado(usuarioId, BloqueHorario.Estado.CONFIRMADO);
+        DetectorSolapes.primerSolape(candidato, confirmados).ifPresent(otro -> {
+            throw new BusinessException("Se solapa con " + DetectorSolapes.describir(otro));
+        });
     }
 
     private void validarCoherenciaTipo(BloqueHorarioRequest req) {
