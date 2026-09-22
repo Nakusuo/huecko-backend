@@ -1,11 +1,13 @@
 package com.huecko.backend.retraso.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.AlertaRetraso;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -16,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +35,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class RetrasoService {
+
+    /** Antes de esto un «llego tarde» no es un retraso, es un cambio de planes. */
+    private static final Duration ANTELACION_MAXIMA = Duration.ofHours(24);
 
     private final AlertaRetrasoRepository alertaRepository;
     private final PlanRepository planRepository;
@@ -131,8 +137,21 @@ public class RetrasoService {
             throw new BusinessException(
                     "Solo se puede avisar de un retraso en un plan ya confirmado");
         }
-        if (plan.yaTermino(Instant.now())) {
+        Instant ahora = Instant.now();
+        if (plan.yaTermino(ahora)) {
             throw new BusinessException("Este plan ya terminó: no se puede avisar de un retraso");
+        }
+        // Un aviso con días de antelación se quedaba en la vista del evento
+        // hasta el día del plan, cuando ya nadie recordaba si seguía en pie.
+        // Si falta tanto, lo que toca es reportar un imprevisto.
+        VentanaPlan ventana = plan.getVentanaConfirmada();
+        if (ventana != null) {
+            Instant inicio = ZonaHoraria.instante(ventana.getFecha(), ventana.getHoraInicio());
+            if (inicio.isAfter(ahora.plus(ANTELACION_MAXIMA))) {
+                throw new BusinessException(
+                        "Solo se puede avisar de un retraso en las 24 horas previas al plan. Podrás hacerlo desde el "
+                                + ventana.getFecha().minusDays(1) + " a las " + ventana.getHoraInicio() + ".");
+            }
         }
     }
 
