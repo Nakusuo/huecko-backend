@@ -376,6 +376,60 @@ class ImprevistoServiceTest {
         verify(votacionRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("Cada voto avisa al grupo para que el recuento se mueva en vivo")
+    void votarAvisaAlGrupo() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        VotacionExpres abierta = votacionAbierta(new LinkedHashMap<>());
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(abierta));
+        when(operaciones.registrarVoto(eq(PLAN.toString()), eq(bruno.getId().toString()), any(), any()))
+                .thenAnswer(i -> {
+                    abierta.getVotos().put(i.getArgument(1), i.getArgument(2));
+                    return Optional.of(abierta);
+                });
+
+        servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.CANCELAR);
+
+        /* Sin este aviso el panel de votación se quedaba con el recuento que
+           había al abrir la pantalla mientras el plazo corría: cada uno votaba
+           mirando un marcador viejo. */
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> datos = ArgumentCaptor.forClass(Map.class);
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.VOTO_EXPRES_ACTUALIZADO), datos.capture());
+
+        assertThat(datos.getValue()).containsEntry("planId", PLAN.toString());
+        assertThat(datos.getValue()).containsEntry("votosEmitidos", 1);
+    }
+
+    @Test
+    @DisplayName("El aviso de voto no dice quien voto ni que voto (RNF-02)")
+    void elAvisoDeVotoNoFiltraLosVotos() {
+        plan(Plan.Estado.CONFIRMADO, ana);
+        VotacionExpres abierta = votacionAbierta(new LinkedHashMap<>());
+        when(votacionRepository.findByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA))
+                .thenReturn(Optional.of(abierta));
+        when(operaciones.registrarVoto(eq(PLAN.toString()), eq(bruno.getId().toString()), any(), any()))
+                .thenAnswer(i -> {
+                    abierta.getVotos().put(i.getArgument(1), i.getArgument(2));
+                    return Optional.of(abierta);
+                });
+
+        servicio.votar(bruno.getId(), PLAN, VotacionExpres.Opcion.CANCELAR);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> datos = ArgumentCaptor.forClass(Map.class);
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.VOTO_EXPRES_ACTUALIZADO), datos.capture());
+
+        /* El topic lo lee todo el grupo: si el evento llevara los votos, cada
+           miembro sabría lo que votaron los demás con solo mirar la consola. */
+        String contenido = datos.getValue().toString();
+        assertThat(contenido).doesNotContain(bruno.getId().toString());
+        assertThat(contenido).doesNotContain("CANCELAR");
+    }
+
     /* ------------------------------------------------------------------ */
 
     private Plan plan(Plan.Estado estado, Usuario creador) {
