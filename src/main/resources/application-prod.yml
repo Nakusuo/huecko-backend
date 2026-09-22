@@ -1,0 +1,19 @@
+# Perfil de despliegue: sin datos de demo y sin que Hibernate toque el esquema.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+huecko:
+  seed:
+    enabled: false
+
+# Cualquier cuenta registrada podía ver el detalle de salud (bases, disco).
+management:
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    com.huecko.backend: INFO

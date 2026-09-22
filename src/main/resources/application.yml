@@ -1,0 +1,90 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: huecko-backend
+
+  # --- Postgres: usuarios, grupos y membresías (datos relacionales) ---
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:huecko}
+    username: ${POSTGRES_USER:huecko}
+    password: ${POSTGRES_PASSWORD:huecko}
+  jpa:
+    hibernate:
+      # `update` mientras el modelo se mueve. Antes de desplegar hay que pasar a
+      # `validate` y llevar el esquema con Flyway o Liquibase.
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # --- Mongo: bloques de horario (esquema flexible por RF-01…RF-04) ---
+  data:
+    mongodb:
+      uri: mongodb://${MONGO_USER:huecko}:${MONGO_PASSWORD:huecko}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/${MONGO_DB:huecko}?authSource=admin
+      auto-index-creation: true
+
+  jackson:
+    # Instant/LocalDate/LocalTime como texto ISO, no como número.
+    serialization:
+      write-dates-as-timestamps: false
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+# El frontend consulta `${VITE_API_URL}/actuator/health`, y VITE_API_URL es
+# `/api`. Sin mover la base de actuator, esa comprobación daría 404.
+management:
+  endpoints:
+    web:
+      base-path: /api/actuator
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+huecko:
+  jwt:
+    # Sin valor por defecto a propósito: fuera del perfil `dev` hay que definir
+    # HUECKO_JWT_SECRET o la aplicación no arranca. La clave de desarrollo vive
+    # en application-dev.yml, que solo se carga con ese perfil.
+    secret: ${HUECKO_JWT_SECRET}
+    expiration-minutes: ${HUECKO_JWT_EXPIRATION_MINUTES:720}
+  cors:
+    allowed-origins: ${HUECKO_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  # Carga de datos de demo al arrancar (usuarios con contraseña conocida).
+  # Apagada por defecto: solo la enciende el perfil `dev`. Así un despliegue
+  # sin perfil, o con un perfil mal escrito, no crea cuentas de demo.
+  seed:
+    enabled: false
+  planes:
+    # RF-10: barrido que cierra las votaciones con el plazo vencido y confirma
+    # la ventana ganadora. Se puede apagar en pruebas.
+    cierre-automatico: true
+    intervalo-cierre-ms: 60000
+    # Margen para que el contexto termine de arrancar antes del primer barrido.
+    retardo-inicial-ms: 10000
+  imprevistos:
+    # RF-16: quién decide la criticidad. `reglas` es el MVP. El documento deja
+    # un LLM como mejora de fase 2: cuando exista, aquí se pondrá `ia`.
+    evaluador: ${HUECKO_IMPREVISTOS_EVALUADOR:reglas}
+    # RF-17: "plazo corto". Una hora es el ejemplo del documento.
+    plazo-minutos: ${HUECKO_IMPREVISTOS_PLAZO_MINUTOS:60}
+    # RF-18: qué se aplica si nadie vota antes de que venza el plazo.
+    resultado-por-defecto: ${HUECKO_IMPREVISTOS_RESULTADO_DEFECTO:MANTENER}
+    # RF-18: el barrido que cierra y aplica. NO es el índice TTL de Mongo —
+    # ver el comentario de VotacionExpres. Cada 30 s porque los plazos aquí
+    # son cortos y un minuto de retraso se nota.
+    cierre-automatico: true
+    intervalo-cierre-ms: 30000
+    retardo-inicial-ms: 15000
+    # Días que se conserva una votación ya cerrada antes de que el TTL la borre.
+    dias-purga: 7
+
+logging:
+  level:
+    com.huecko.backend: DEBUG
