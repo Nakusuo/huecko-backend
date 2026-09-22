@@ -1,0 +1,19 @@
+target/
+
+### IDE ###
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+### Entorno local ###
+.env
+*.local
+
+### Logs ###
+*.log
+
+# Parches y volcados sueltos: artefactos de revisión, no del proyecto
+*.patch
