@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -118,6 +119,24 @@ class SeguridadStompInterceptorTest {
         StompHeaderAccessor accessor = suscripcionAutenticada("/topic/todo");
 
         assertThat(interceptor.preSend(mensaje(accessor), null)).isNull();
+    }
+
+    @Test
+    @DisplayName("Un destino rechazado NO tumba la sesion: el frame se descarta, no se lanza")
+    void suscripcionRechazadaNoRompeLaSesion() {
+        when(miembros.existsByGrupo_IdAndUsuario_Id(OTRO_GRUPO, ANA.id())).thenReturn(false);
+        when(miembros.existsByGrupo_IdAndUsuario_Id(GRUPO, ANA.id())).thenReturn(true);
+
+        /* Lanzar en vez de descartar producía un frame ERROR, y tras un ERROR el
+           protocolo obliga a cerrar la conexión: el grupo obsoleto se llevaba por
+           delante las suscripciones buenas, el cliente reconectaba, volvía a pedir
+           lo mismo y el canal entraba en un ciclo del que no salía. */
+        assertThatCode(() -> interceptor.preSend(mensaje(suscripcionAutenticada(Destinos.grupo(OTRO_GRUPO))), null))
+                .doesNotThrowAnyException();
+
+        // Y la suscripción legítima sigue pasando después de la rechazada.
+        assertThat(interceptor.preSend(mensaje(suscripcionAutenticada(Destinos.grupo(GRUPO))), null))
+                .isNotNull();
     }
 
     // --- otros comandos ---
