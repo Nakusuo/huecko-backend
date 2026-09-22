@@ -7,12 +7,17 @@ import com.huecko.backend.grupo.dto.GrupoRequests;
 import com.huecko.backend.grupo.dto.GrupoResponse;
 import com.huecko.backend.mongo.document.BloqueHorario;
 import com.huecko.backend.mongo.repository.BloqueHorarioRepository;
+import com.huecko.backend.mongo.repository.VotacionExpresOperaciones;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
+import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.entity.VotoVentana;
 import com.huecko.backend.postgres.repository.GrupoRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
+import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
+import com.huecko.backend.postgres.repository.VotoVentanaRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,12 +54,16 @@ class GrupoServiceTest {
     @Mock private MiembroGrupoRepository miembroGrupoRepository;
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private BloqueHorarioRepository bloqueHorarioRepository;
+    @Mock private PlanRepository planRepository;
+    @Mock private VotoVentanaRepository votoVentanaRepository;
+    @Mock private VotacionExpresOperaciones votacionExpresOperaciones;
 
     private final CalculadoraDisponibilidad calculadora = new CalculadoraDisponibilidad();
 
     private GrupoService servicio() {
         return new GrupoService(grupoRepository, miembroGrupoRepository, usuarioRepository,
-                bloqueHorarioRepository, calculadora);
+                bloqueHorarioRepository, calculadora, planRepository, votoVentanaRepository,
+                votacionExpresOperaciones);
     }
 
     /* ------------------------------------------------------------------ *
@@ -272,6 +281,66 @@ class GrupoServiceTest {
     }
 
     @Test
+    @DisplayName("Quien sale del grupo se lleva sus votos de planes en votación y de votaciones exprés abiertas")
+    void alSalirSeBorranSusVotosAbiertos() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        MiembroGrupo raso = membresia(usuario("Bruno"), MiembroGrupo.Rol.MIEMBRO);
+        UUID brunoId = raso.getUsuario().getId();
+        List<VotoVentana> votosDeBruno = List.of(VotoVentana.builder().usuario(raso.getUsuario()).build());
+
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, brunoId)).thenReturn(Optional.of(raso));
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(jefa, raso));
+        when(miembroGrupoRepository.countByGrupo_Id(GRUPO)).thenReturn(2L, 1L);
+        when(votoVentanaRepository.findByUsuarioEnGrupoConEstado(brunoId, GRUPO, Plan.Estado.PROPUESTO))
+                .thenReturn(votosDeBruno);
+
+        servicio().salir(brunoId, GRUPO, brunoId);
+
+        verify(votoVentanaRepository).deleteAll(votosDeBruno);
+        verify(votacionExpresOperaciones).retirarVotosDe(GRUPO.toString(), brunoId.toString());
+        // Quedan integrantes: sus planes siguen su curso.
+        verify(planRepository, never()).findByGrupo_IdAndEstado(any(), any());
+    }
+
+    @Test
+    @DisplayName("Sacar a alguien también le quita los votos abiertos")
+    void alExpulsarSeBorranSusVotos() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        MiembroGrupo raso = membresia(usuario("Bruno"), MiembroGrupo.Rol.MIEMBRO);
+        UUID anaId = jefa.getUsuario().getId();
+        UUID brunoId = raso.getUsuario().getId();
+
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, anaId)).thenReturn(Optional.of(jefa));
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, brunoId)).thenReturn(Optional.of(raso));
+        when(miembroGrupoRepository.countByGrupo_Id(GRUPO)).thenReturn(1L);
+
+        servicio().salir(anaId, GRUPO, brunoId);
+
+        verify(votoVentanaRepository).findByUsuarioEnGrupoConEstado(brunoId, GRUPO, Plan.Estado.PROPUESTO);
+        verify(votacionExpresOperaciones).retirarVotosDe(GRUPO.toString(), brunoId.toString());
+    }
+
+    @Test
+    @DisplayName("Si el grupo queda vacío con planes, los que siguen en votación se cancelan")
+    void elGrupoVacioCancelaSusPlanesEnVotacion() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        UUID anaId = jefa.getUsuario().getId();
+        Plan abierto = Plan.builder().id(UUID.randomUUID()).estado(Plan.Estado.PROPUESTO).build();
+
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, anaId)).thenReturn(Optional.of(jefa));
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(jefa));
+        when(miembroGrupoRepository.countByGrupo_Id(GRUPO)).thenReturn(1L, 0L);
+        when(grupoRepository.tienePlanes(GRUPO)).thenReturn(true);
+        when(planRepository.findByGrupo_IdAndEstado(GRUPO, Plan.Estado.PROPUESTO)).thenReturn(List.of(abierto));
+
+        servicio().salir(anaId, GRUPO, anaId);
+
+        assertThat(abierto.getEstado()).isEqualTo(Plan.Estado.CANCELADO);
+        assertThat(abierto.getCerradoEn()).isNotNull();
+        verify(planRepository).saveAll(List.of(abierto));
+    }
+
+    @Test
     @DisplayName("Degradar al único organizador se rechaza: el grupo quedaría sin quien lo administre")
     void noSePuedeDegradarAlUnicoOrganizador() {
         MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
@@ -339,6 +408,24 @@ class GrupoServiceTest {
         // Y el de la petición manda sobre el guardado, sin cambiarlo.
         assertThat(servicio().disponibilidad(anaId, GRUPO, 90, null).umbral()).isEqualTo(90);
         assertThat(jefa.getGrupo().getUmbralDisponibilidad()).isEqualTo(70);
+    }
+
+    @Test
+    @DisplayName("El umbral de la consulta tiene los mismos límites que el del grupo: 50 a 100")
+    void elUmbralDeLaConsultaVaDe50A100() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        UUID anaId = jefa.getUsuario().getId();
+
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, anaId)).thenReturn(Optional.of(jefa));
+        when(miembroGrupoRepository.findUsuarioIdsByGrupoId(GRUPO)).thenReturn(List.of(anaId));
+        when(bloqueHorarioRepository.findByUsuarioIdInAndEstado(any(), any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> servicio().disponibilidad(anaId, GRUPO, 49, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("El umbral debe estar entre 50 y 100");
+        assertThatThrownBy(() -> servicio().disponibilidad(anaId, GRUPO, 101, null))
+                .isInstanceOf(BusinessException.class);
+        assertThat(servicio().disponibilidad(anaId, GRUPO, 50, null).umbral()).isEqualTo(50);
     }
 
     @Test
