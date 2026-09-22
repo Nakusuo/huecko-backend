@@ -45,6 +45,22 @@ public final class PlanRequests {
     }
 
     /**
+     * Volver a votar la fecha de un plan que una votación exprés mandó a
+     * recoordinar (resultado REAGENDAR). Título, lugar y modo de voto no
+     * cambian: el plan es el mismo, solo se busca otro momento.
+     */
+    public record Reagendar(
+            @NotNull(message = "El plazo de votación es obligatorio")
+            Instant plazoVotacion,
+
+            @NotEmpty(message = "Hay que proponer al menos 2 ventanas de tiempo")
+            @Size(min = 2, max = 5, message = "Un plan se vota entre 2 y 5 ventanas de tiempo")
+            @Valid
+            List<@NotNull(message = "Hay una ventana vacía") Ventana> ventanas
+    ) {
+    }
+
+    /**
      * Una opción de fecha y hora.
      *
      * Lleva fecha concreta y no día de la semana: el heatmap habla de rutinas
