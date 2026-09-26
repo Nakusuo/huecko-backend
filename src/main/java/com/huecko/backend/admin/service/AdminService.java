@@ -1,5 +1,6 @@
 package com.huecko.backend.admin.service;
 
+import com.huecko.backend.admin.dto.GrupoAdminResponse;
 import com.huecko.backend.admin.dto.ResumenAdminResponse;
 import com.huecko.backend.admin.dto.UsuarioAdminResponse;
 import com.huecko.backend.common.exception.BusinessException;
@@ -50,6 +51,11 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<UsuarioAdminResponse> usuarios() {
         return ListadoUsuarios.listar(cargarDatos());
+    }
+
+    @Transactional(readOnly = true)
+    public List<GrupoAdminResponse> grupos() {
+        return ListadoGrupos.listar(cargarDatos());
     }
 
     /**

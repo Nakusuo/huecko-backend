@@ -197,6 +197,36 @@ class GrupoServiceTest {
     }
 
     @Test
+    @DisplayName("Una cuenta de administración no se puede añadir a un grupo")
+    void elAdminNoEntraEnGrupos() {
+        MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
+        Usuario admin = usuario("Admin");
+        admin.setRolSistema(Usuario.RolSistema.ADMIN);
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, jefa.getUsuario().getId()))
+                .thenReturn(Optional.of(jefa));
+        when(usuarioRepository.findByEmailIgnoreCase("admin@huecko.com")).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() ->
+                servicio().agregarMiembro(jefa.getUsuario().getId(), GRUPO, "admin@huecko.com"))
+                .isInstanceOf(BusinessException.class);
+
+        verify(miembroGrupoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Una cuenta de administración no crea grupos")
+    void elAdminNoCreaGrupos() {
+        Usuario admin = usuario("Admin");
+        admin.setRolSistema(Usuario.RolSistema.ADMIN);
+        when(usuarioRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> servicio().crear(admin.getId(), new GrupoRequests.Crear("X", null, null)))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(grupoRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Agregar dos veces a la misma persona no duplica la membresía")
     void agregarDosVecesEsIdempotente() {
         MiembroGrupo jefa = membresia(usuario("Ana"), MiembroGrupo.Rol.ORGANIZADOR);
