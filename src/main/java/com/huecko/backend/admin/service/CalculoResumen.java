@@ -72,20 +72,11 @@ final class CalculoResumen {
                                                           Instant hace7, Instant hace30) {
         long nuevos = cuentas.stream().filter(u -> despuesDe(u.getCreadoEn(), hace7)).count();
 
-        /* Activa = hizo algo en la app en 30 días: proponer, votar, tocar su
-           horario o avisar de un retraso o una ausencia. Entrar sin hacer nada
-           no deja rastro, así que no cuenta. */
-        Set<String> activos = new HashSet<>();
-        d.planes().stream().filter(p -> despuesDe(p.getCreadoEn(), hace30))
-                .forEach(p -> activos.add(p.getCreadoPor().getId().toString()));
-        d.votos().stream().filter(v -> despuesDe(v.getCreadoEn(), hace30))
-                .forEach(v -> activos.add(v.getUsuario().getId().toString()));
-        d.bloques().stream().filter(b -> despuesDe(b.getActualizadoEn(), hace30))
-                .forEach(b -> activos.add(b.getUsuarioId()));
-        d.retrasos().stream().filter(r -> despuesDe(r.getActualizadoEn(), hace30))
-                .forEach(r -> activos.add(r.getUsuarioId()));
-        d.ausencias().stream().filter(a -> despuesDe(a.getReportadoEn(), hace30))
-                .forEach(a -> activos.add(a.getUsuarioId()));
+        // Activa = hizo algo en la app en los últimos 30 días (ver ActividadReciente).
+        Set<String> activos = ActividadReciente.ultimaPorUsuario(d).entrySet().stream()
+                .filter(e -> despuesDe(e.getValue(), hace30))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toCollection(HashSet::new));
 
         Set<String> conHorario = d.bloques().stream()
                 .filter(b -> b.getEstado() == BloqueHorario.Estado.CONFIRMADO)
