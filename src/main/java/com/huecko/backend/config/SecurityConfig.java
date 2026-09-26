@@ -76,6 +76,8 @@ public class SecurityConfig {
                         // del protocolo STOMP.
                         .requestMatchers("/api/ws/**").permitAll()
                         .requestMatchers("/api/actuator/health", "/api/actuator/health/**", "/api/actuator/info").permitAll()
+                        // El panel de administración. Una cuenta normal recibe 403.
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(handler -> handler
                         .authenticationEntryPoint((request, response, ex) ->

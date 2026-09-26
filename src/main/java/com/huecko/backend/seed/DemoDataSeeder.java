@@ -50,6 +50,10 @@ public class DemoDataSeeder implements CommandLineRunner {
     private static final String EMAIL_DEMO = "alex.rodriguez@huecko.com";
     private static final String PASSWORD_DEMO = "demo1234";
 
+    /** Administrador de la plataforma: sin grupos ni horario (no participa, opera). */
+    private static final String EMAIL_ADMIN = "admin@huecko.com";
+    private static final String PASSWORD_ADMIN = "admin1234";
+
     private static final String EMAIL_COMPANERA = "diana.torres@huecko.com";
     private static final String NOMBRE_GRUPO = "Proyecto Integrador 2026-II";
 
@@ -65,11 +69,23 @@ public class DemoDataSeeder implements CommandLineRunner {
         Usuario alex = asegurarUsuario("Alex Rodríguez", EMAIL_DEMO, PASSWORD_DEMO);
         Usuario diana = asegurarUsuario("Diana Torres", EMAIL_COMPANERA, PASSWORD_DEMO);
 
+        asegurarAdmin();
+
         asegurarGrupo(alex, diana);
         asegurarBloques(alex);
         asegurarBloques(diana);
 
         log.info("Datos de demo listos. Entra con {} / {}", EMAIL_DEMO, PASSWORD_DEMO);
+        log.info("Panel de administración: {} / {}", EMAIL_ADMIN, PASSWORD_ADMIN);
+    }
+
+    /** También corrige el rol si la cuenta ya existía como usuario normal. */
+    private void asegurarAdmin() {
+        Usuario admin = asegurarUsuario("Administración Huecko", EMAIL_ADMIN, PASSWORD_ADMIN);
+        if (admin.getRolSistema() != Usuario.RolSistema.ADMIN) {
+            admin.setRolSistema(Usuario.RolSistema.ADMIN);
+            usuarioRepository.save(admin);
+        }
     }
 
     private Usuario asegurarUsuario(String nombre, String email, String password) {
