@@ -61,6 +61,10 @@ huecko:
   # sin perfil, o con un perfil mal escrito, no crea cuentas de demo.
   seed:
     enabled: false
+  # Correos (separados por coma) que pasan a administrador al arrancar. Deben
+  # tener cuenta ya creada. Vacío: nadie se promueve.
+  admin:
+    emails: ${HUECKO_ADMIN_EMAILS:}
   planes:
     # RF-10: barrido que cierra las votaciones con el plazo vencido y confirma
     # la ventana ganadora. Se puede apagar en pruebas.

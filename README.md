@@ -88,6 +88,22 @@ cualquier otro perfil, si `HUECKO_JWT_SECRET` no está definida la API no arranc
 y con `prod` tampoco arranca si sigue siendo la clave de ejemplo: con ella
 cualquiera podría firmar un token a nombre de otra persona.
 
+#### Administradores
+
+Las cuentas tienen un rol de plataforma, `rolSistema` (`USUARIO` o `ADMIN`),
+distinto del rol dentro de un grupo. Todo `/api/admin/**` exige `ADMIN`; una
+cuenta normal recibe 403. El rol viaja en el JWT, así que un cambio de rol se
+nota en el siguiente inicio de sesión.
+
+- **Desarrollo:** el seed crea `admin@huecko.com` / `admin1234`.
+- **Producción:** no hay seed. Regístrate con la cuenta que vaya a administrar,
+  pon su correo en `HUECKO_ADMIN_EMAILS` (varios, separados por coma) y
+  reinicia. Con `ddl-auto: validate`, la columna hay que crearla antes a mano:
+
+  ```sql
+  ALTER TABLE usuarios ADD COLUMN rol_sistema VARCHAR(20) NOT NULL DEFAULT 'USUARIO';
+  ```
+
 ### 2. Levantar las bases
 
 ```bash
