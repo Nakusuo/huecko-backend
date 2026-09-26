@@ -1,5 +1,6 @@
 package com.huecko.backend.admin.controller;
 
+import com.huecko.backend.admin.dto.GrupoAdminResponse;
 import com.huecko.backend.admin.dto.ResumenAdminResponse;
 import com.huecko.backend.admin.dto.SuspensionRequest;
 import com.huecko.backend.admin.dto.UsuarioAdminResponse;
@@ -36,6 +37,11 @@ public class AdminController {
     @GetMapping("/usuarios")
     public ResponseEntity<List<UsuarioAdminResponse>> usuarios() {
         return ResponseEntity.ok(adminService.usuarios());
+    }
+
+    @GetMapping("/grupos")
+    public ResponseEntity<List<GrupoAdminResponse>> grupos() {
+        return ResponseEntity.ok(adminService.grupos());
     }
 
     @PatchMapping("/usuarios/{usuarioId}/suspension")
