@@ -16,13 +16,15 @@ public record UsuarioResponse(
         String id,
         String nombre,
         String email,
-        @JsonProperty("creado_en") Instant creadoEn
+        @JsonProperty("creado_en") Instant creadoEn,
+        Usuario.RolSistema rolSistema
 ) {
     public static UsuarioResponse from(Usuario usuario) {
         return new UsuarioResponse(
                 usuario.getId().toString(),
                 usuario.getNombre(),
                 usuario.getEmail(),
-                usuario.getCreadoEn());
+                usuario.getCreadoEn(),
+                usuario.getRolSistema());
     }
 }
