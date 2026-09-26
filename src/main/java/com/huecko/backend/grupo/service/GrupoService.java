@@ -71,6 +71,10 @@ public class GrupoService {
     @Transactional
     public GrupoResponse crear(UUID usuarioId, GrupoRequests.Crear req) {
         Usuario creador = usuarioOFallar(usuarioId);
+        // El admin opera la plataforma; no participa en ella.
+        if (creador.getRolSistema() == Usuario.RolSistema.ADMIN) {
+            throw new ForbiddenException("Una cuenta de administración no crea ni integra grupos.");
+        }
 
         Grupo grupo = grupoRepository.save(Grupo.builder()
                 .nombre(req.nombre().trim())
@@ -137,6 +141,9 @@ public class GrupoService {
         Usuario nuevo = usuarioRepository.findByEmailIgnoreCase(email.trim())
                 .orElseThrow(() -> new NotFoundException(
                         "No hay ninguna cuenta de Huecko con ese correo"));
+        if (nuevo.getRolSistema() == Usuario.RolSistema.ADMIN) {
+            throw new BusinessException("Esa cuenta es de administración y no puede unirse a grupos.");
+        }
 
         if (!miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(grupoId, nuevo.getId())) {
             miembroGrupoRepository.save(MiembroGrupo.builder()
