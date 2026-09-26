@@ -48,6 +48,12 @@ public class Usuario {
     @Builder.Default
     private RolSistema rolSistema = RolSistema.USUARIO;
 
+    /** Cuenta bloqueada por un admin: no puede entrar y su token deja de valer. */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    @Builder.Default
+    private boolean suspendido = false;
+
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;
 
