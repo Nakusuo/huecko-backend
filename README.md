@@ -102,7 +102,11 @@ nota en el siguiente inicio de sesión.
 
   ```sql
   ALTER TABLE usuarios ADD COLUMN rol_sistema VARCHAR(20) NOT NULL DEFAULT 'USUARIO';
+  ALTER TABLE usuarios ADD COLUMN suspendido BOOLEAN NOT NULL DEFAULT FALSE;
   ```
+
+Un admin puede suspender cuentas desde el panel (a otro admin no). La cuenta
+suspendida no puede entrar y su token deja de valer en la siguiente petición.
 
 ### 2. Levantar las bases
 
