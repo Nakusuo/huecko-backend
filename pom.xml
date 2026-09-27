@@ -13,7 +13,7 @@
 
     <groupId>com.huecko</groupId>
     <artifactId>huecko-backend</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.4.0</version>
     <name>huecko-backend</name>
     <description>API REST de Huecko — coordinación de horarios y planes de grupo</description>
 
