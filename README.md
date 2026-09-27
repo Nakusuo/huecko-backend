@@ -105,8 +105,23 @@ nota en el siguiente inicio de sesión.
   ALTER TABLE usuarios ADD COLUMN suspendido BOOLEAN NOT NULL DEFAULT FALSE;
   ```
 
-Un admin puede suspender cuentas desde el panel (a otro admin no). La cuenta
-suspendida no puede entrar y su token deja de valer en la siguiente petición.
+El admin **observa, no gestiona**: no navega cuentas ni grupos, ni participa en
+ellos. Lo que ve en `/api/admin/**`:
+
+| Ruta | Qué da |
+| --- | --- |
+| `GET /resumen` | Cifras agregadas de uso (sin nombres ni agendas). |
+| `GET /salud` | PostgreSQL, MongoDB y tiempo real, con latencia; las tareas programadas (última pasada, fallos, elementos atrasados); versión, memoria y tiempo encendido. |
+| `GET /fallos`, `PATCH /fallos/{id}/estado` | Errores 500, de tareas y del navegador, agrupados por huella (tipo + lugar + línea), con su número de ocurrencias. Si uno resuelto reaparece, se reabre. |
+| `GET /reportes`, `PATCH /reportes/{id}/estado` | Lo que las personas envían desde «Reportar un problema». |
+| `PATCH /reportes/{id}/suspension` | Única acción sobre una cuenta: suspender o reactivar la que señala un reporte de conducta. A un admin no. |
+| `GET /consola/logs?desde=&nivel=` | Las últimas 1000 líneas del log (INFO+ propio, WARN+ de librerías), para leerlas en vivo. |
+| `GET /consola/configuracion` | Configuración activa en solo lectura, sin secretos. |
+| `GET /pendientes` | Fallos y reportes nuevos, para los contadores del panel. |
+
+Las personas envían a `POST /api/reportes` (máximo 5 por hora) y el frontend manda
+sus errores de JavaScript a `POST /api/reportes/errores` (máximo 20 cada 10 min).
+Una cuenta suspendida no puede entrar y su token deja de valer al momento.
 
 ### 2. Levantar las bases
 
