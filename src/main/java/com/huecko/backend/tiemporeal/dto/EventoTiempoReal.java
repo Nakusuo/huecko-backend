@@ -31,6 +31,20 @@ public record EventoTiempoReal(
          * cancelado: sin este aviso el grupo seguiría esperando una fecha.
          */
         PLAN_CANCELADO,
+        /**
+         * RF-08: alguien propuso un plan. Sin esto, el resto del grupo no veía
+         * la propuesta hasta recargar, y la votación podía cerrar sin que lo
+         * supieran.
+         */
+        PLAN_PROPUESTO,
+        /** Tras un REAGENDAR: el plan vuelve a votarse con ventanas nuevas. */
+        PLAN_REAGENDADO,
+        /**
+         * RF-09: cambió algún voto de ventana de un plan. Solo lleva el plan y
+         * quién votó —que ya es público en PlanResponse—, nunca qué ventana:
+         * el cliente vuelve a pedir el plan.
+         */
+        VOTO_ACTUALIZADO,
         /** RF-13: alguien avisa que llegará tarde; el evento no cambia. */
         RETRASO_REPORTADO,
         /** RF-19: baja no crítica, solo se informa. */

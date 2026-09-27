@@ -5,6 +5,7 @@ import com.huecko.backend.auth.dto.LoginRequest;
 import com.huecko.backend.auth.dto.RegisterRequest;
 import com.huecko.backend.auth.dto.UsuarioResponse;
 import com.huecko.backend.common.exception.BusinessException;
+import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,8 @@ public class AuthService {
 
     /** Mismo texto para "no existe" y "contraseña mal": no se filtra qué correos hay registrados. */
     private static final String CREDENCIALES_INVALIDAS = "Credenciales incorrectas. Intenta de nuevo.";
+
+    public static final String CUENTA_SUSPENDIDA = "Tu cuenta está suspendida. Contacta con la administración de Huecko.";
 
     /**
      * BCrypt solo usa los primeros 72 bytes: dos contraseñas largas que
@@ -82,6 +85,11 @@ public class AuthService {
             throw new BusinessException(CREDENCIALES_INVALIDAS);
         }
 
+        // Después de la contraseña: a quien no la sabe no se le dice que la cuenta existe.
+        if (usuario.isSuspendido()) {
+            throw new ForbiddenException(CUENTA_SUSPENDIDA);
+        }
+
         return responder(usuario);
     }
 
@@ -95,7 +103,8 @@ public class AuthService {
     }
 
     private AuthResponse responder(Usuario usuario) {
-        String token = jwtService.generar(usuario.getId(), usuario.getEmail(), usuario.getNombre());
+        String token = jwtService.generar(
+                usuario.getId(), usuario.getEmail(), usuario.getNombre(), usuario.getRolSistema());
         return new AuthResponse(token, UsuarioResponse.from(usuario));
     }
 

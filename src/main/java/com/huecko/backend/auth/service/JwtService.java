@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import com.huecko.backend.postgres.entity.Usuario.RolSistema;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
@@ -53,12 +54,17 @@ public class JwtService {
         this.expirationMinutes = expirationMinutes;
     }
 
-    public String generar(UUID usuarioId, String email, String nombre) {
+    /**
+     * El rol va dentro del token para no consultar la base en cada petición.
+     * Contrapartida: un cambio de rol se nota en el siguiente inicio de sesión.
+     */
+    public String generar(UUID usuarioId, String email, String nombre, RolSistema rolSistema) {
         Instant ahora = Instant.now();
         return Jwts.builder()
                 .subject(usuarioId.toString())
                 .claim("email", email)
                 .claim("nombre", nombre)
+                .claim("rol", rolSistema.name())
                 .issuedAt(Date.from(ahora))
                 .expiration(Date.from(ahora.plus(expirationMinutes, ChronoUnit.MINUTES)))
                 .signWith(key)
@@ -81,9 +87,15 @@ public class JwtService {
             return Optional.of(new UsuarioAutenticado(
                     UUID.fromString(claims.getSubject()),
                     claims.get("email", String.class),
-                    claims.get("nombre", String.class)));
+                    claims.get("nombre", String.class),
+                    leerRol(claims.get("rol", String.class))));
         } catch (JwtException | IllegalArgumentException ex) {
             return Optional.empty();
         }
+    }
+
+    /** Los tokens emitidos antes de existir el rol no lo traen: son de cuentas normales. */
+    private static RolSistema leerRol(String rol) {
+        return RolSistema.ADMIN.name().equals(rol) ? RolSistema.ADMIN : RolSistema.USUARIO;
     }
 }
