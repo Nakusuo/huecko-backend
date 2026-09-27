@@ -48,6 +48,8 @@ management:
       show-details: when-authorized
 
 huecko:
+  # La pone Maven al empaquetar (filtrado de recursos del parent de Spring Boot).
+  version: '@project.version@'
   jwt:
     # Sin valor por defecto a propósito: fuera del perfil `dev` hay que definir
     # HUECKO_JWT_SECRET o la aplicación no arranca. La clave de desarrollo vive
