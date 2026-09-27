@@ -1,6 +1,9 @@
 package com.huecko.backend.imprevisto.service;
 
 import com.huecko.backend.mongo.document.VotacionExpres;
+import com.huecko.backend.observabilidad.service.RegistroFallos;
+import com.huecko.backend.observabilidad.service.RegistroTareas;
+import com.huecko.backend.observabilidad.service.Tarea;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -33,24 +37,35 @@ public class CierreVotacionExpresScheduler {
     private static final Logger log = LoggerFactory.getLogger(CierreVotacionExpresScheduler.class);
 
     private final ImprevistoService imprevistoService;
+    private final RegistroTareas registroTareas;
+    private final RegistroFallos registroFallos;
 
     @Scheduled(fixedDelayString = "${huecko.imprevistos.intervalo-cierre-ms:30000}",
                initialDelayString = "${huecko.imprevistos.retardo-inicial-ms:15000}")
     public void cerrarVencidas() {
-        List<VotacionExpres> vencidas = imprevistoService.vencidasSinCerrar(Instant.now());
-        if (vencidas.isEmpty()) {
-            return;
-        }
+        Instant inicio = Instant.now();
+        int fallidos = 0;
+        String ultimoError = null;
 
-        log.info("Cerrando {} votacion(es) expres con el plazo vencido", vencidas.size());
+        List<VotacionExpres> vencidas = imprevistoService.vencidasSinCerrar(inicio);
+        if (!vencidas.isEmpty()) {
+            log.info("Cerrando {} votacion(es) expres con el plazo vencido", vencidas.size());
+        }
         for (VotacionExpres votacion : vencidas) {
             try {
                 // Una por una: que falle el plan de una no debe dejar abiertas
                 // las demás del mismo barrido.
                 imprevistoService.cerrar(votacion.getId());
             } catch (RuntimeException ex) {
+                fallidos++;
+                ultimoError = "Votación " + votacion.getId() + ": " + ex.getClass().getSimpleName();
                 log.error("No se pudo cerrar la votacion expres {}", votacion.getId(), ex);
+                registroFallos.registrarTarea(Tarea.CIERRE_VOTACIONES_EXPRES, ex);
             }
         }
+
+        // También las pasadas vacías: son la prueba de que la tarea sigue viva.
+        registroTareas.registrar(Tarea.CIERRE_VOTACIONES_EXPRES, inicio, Duration.between(inicio, Instant.now()),
+                vencidas.size() - fallidos, fallidos, ultimoError);
     }
 }
