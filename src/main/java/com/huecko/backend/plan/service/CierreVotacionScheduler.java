@@ -1,5 +1,8 @@
 package com.huecko.backend.plan.service;
 
+import com.huecko.backend.observabilidad.service.RegistroFallos;
+import com.huecko.backend.observabilidad.service.RegistroTareas;
+import com.huecko.backend.observabilidad.service.Tarea;
 import com.huecko.backend.postgres.entity.Plan;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -8,6 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -31,24 +35,35 @@ public class CierreVotacionScheduler {
     private static final Logger log = LoggerFactory.getLogger(CierreVotacionScheduler.class);
 
     private final PlanService planService;
+    private final RegistroTareas registroTareas;
+    private final RegistroFallos registroFallos;
 
     @Scheduled(fixedDelayString = "${huecko.planes.intervalo-cierre-ms:60000}",
                initialDelayString = "${huecko.planes.retardo-inicial-ms:10000}")
     public void cerrarVotacionesVencidas() {
-        List<Plan> vencidos = planService.vencidosSinCerrar(Instant.now());
-        if (vencidos.isEmpty()) {
-            return;
-        }
+        Instant inicio = Instant.now();
+        int fallidos = 0;
+        String ultimoError = null;
 
-        log.info("Cerrando {} votacion(es) con el plazo vencido", vencidos.size());
+        List<Plan> vencidos = planService.vencidosSinCerrar(inicio);
+        if (!vencidos.isEmpty()) {
+            log.info("Cerrando {} votacion(es) con el plazo vencido", vencidos.size());
+        }
         for (Plan plan : vencidos) {
             try {
                 // Una transaccion por plan: que uno falle no debe dejar sin
                 // cerrar a los demas del mismo barrido.
                 planService.cerrarPorPlazoVencido(plan.getId());
             } catch (RuntimeException ex) {
+                fallidos++;
+                ultimoError = "Plan " + plan.getId() + ": " + ex.getClass().getSimpleName();
                 log.error("No se pudo cerrar la votacion del plan {}", plan.getId(), ex);
+                registroFallos.registrarTarea(Tarea.CIERRE_PLANES, ex);
             }
         }
+
+        // También las pasadas vacías: son la prueba de que la tarea sigue viva.
+        registroTareas.registrar(Tarea.CIERRE_PLANES, inicio, Duration.between(inicio, Instant.now()),
+                vencidos.size() - fallidos, fallidos, ultimoError);
     }
 }

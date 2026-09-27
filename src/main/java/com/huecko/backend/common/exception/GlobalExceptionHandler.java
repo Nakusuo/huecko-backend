@@ -1,5 +1,7 @@
 package com.huecko.backend.common.exception;
 
+import com.huecko.backend.observabilidad.service.RegistroFallos;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,6 +40,12 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    private final RegistroFallos registroFallos;
+
+    public GlobalExceptionHandler(RegistroFallos registroFallos) {
+        this.registroFallos = registroFallos;
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Map<String, Object>> handleBusiness(BusinessException ex) {
@@ -153,7 +161,7 @@ public class GlobalExceptionHandler {
      * mensaje genérico, para no filtrar detalles internos al cliente.
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleUnexpected(Exception ex) {
+    public ResponseEntity<Map<String, Object>> handleUnexpected(Exception ex, HttpServletRequest request) {
         // Las excepciones propias de Spring MVC ya traen su código (415, 406…):
         // se respeta en vez de convertirlas todas en 500.
         if (ex instanceof ErrorResponse respuesta && !respuesta.getStatusCode().is5xxServerError()) {
@@ -162,6 +170,8 @@ public class GlobalExceptionHandler {
         }
 
         log.error("Error no controlado", ex);
+        // A la bandeja de fallos del panel de administración.
+        registroFallos.registrarServidor(ex, request.getMethod(), request.getRequestURI());
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno",
                 "Ocurrió un error inesperado. Intenta de nuevo en unos minutos.");
     }
