@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.huecko.backend.postgres.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,6 +29,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String PREFIJO = "Bearer ";
 
     private final JwtService jwtService;
+    private final UsuarioRepository usuarioRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -38,12 +40,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith(PREFIJO)
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            jwtService.validar(header.substring(PREFIJO.length()).trim()).ifPresent(usuario -> {
-                var authentication = new UsernamePasswordAuthenticationToken(
-                        usuario, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-            });
+            /* El token vive 12 h y no guarda si la cuenta se suspendió después.
+               Una consulta por clave primaria en cada petición es el precio de
+               que suspender surta efecto al momento y no al caducar el token. */
+            jwtService.validar(header.substring(PREFIJO.length()).trim())
+                    .filter(usuario -> !usuarioRepository.existsByIdAndSuspendidoTrue(usuario.id()))
+                    .ifPresent(usuario -> {
+                        String authority = usuario.esAdmin() ? "ROLE_ADMIN" : "ROLE_USER";
+                        var authentication = new UsernamePasswordAuthenticationToken(
+                                usuario, null, List.of(new SimpleGrantedAuthority(authority)));
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    });
         }
 
         filterChain.doFilter(request, response);

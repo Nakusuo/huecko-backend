@@ -1,11 +1,14 @@
 package com.huecko.backend.retraso.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.AlertaRetraso;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
+import com.huecko.backend.mongo.repository.AusenciaRepository;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -16,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,11 +37,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RetrasoService {
 
+    /** Antes de esto un «llego tarde» no es un retraso, es un cambio de planes. */
+    private static final Duration ANTELACION_MAXIMA = Duration.ofHours(24);
+
     private final AlertaRetrasoRepository alertaRepository;
     private final PlanRepository planRepository;
     private final MiembroGrupoRepository miembroGrupoRepository;
     private final UsuarioRepository usuarioRepository;
     private final NotificadorTiempoReal notificador;
+    private final AusenciaRepository ausenciaRepository;
 
     /**
      * RF-12 y RF-13: registra el retraso y avisa al grupo.
@@ -50,6 +58,15 @@ public class RetrasoService {
     public RetrasoResponse reportar(UUID usuarioId, UUID planId, int minutosEstimados) {
         Plan plan = planConAcceso(usuarioId, planId);
         exigirConfirmado(plan);
+
+        // Quien ya dijo que no viene no llega tarde: el grupo vería a la misma
+        // persona en la fila de bajas y en la de puntualidad, y no sabría cuál
+        // de las dos creer. Al revés sí se permite, y la baja borra el retraso
+        // (ver ImprevistoService.reportar).
+        if (ausenciaRepository.existsByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString())) {
+            throw new BusinessException(
+                    "Ya avisaste de que no vas a este plan: no puedes avisar de un retraso");
+        }
 
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
@@ -110,13 +127,20 @@ public class RetrasoService {
 
     /* ------------------------------------------------------------------ */
 
+    /**
+     * Los mismos campos que RetrasoResponse, para que el cliente pueda
+     * actualizar la fila de puntualidad con el evento sin volver a pedirla.
+     */
     private Map<String, Object> datosDe(Plan plan, AlertaRetraso alerta) {
+        RetrasoResponse vista = RetrasoResponse.from(alerta);
         Map<String, Object> datos = new LinkedHashMap<>();
         datos.put("planId", plan.getId().toString());
         datos.put("tituloPlan", plan.getTitulo());
-        datos.put("usuarioId", alerta.getUsuarioId());
-        datos.put("nombreUsuario", alerta.getNombreUsuario());
-        datos.put("minutosEstimados", alerta.getMinutosEstimados());
+        datos.put("usuarioId", vista.usuarioId());
+        datos.put("nombreUsuario", vista.nombreUsuario());
+        datos.put("minutosEstimados", vista.minutosEstimados());
+        datos.put("corregido", vista.corregido());
+        datos.put("reportadoEn", vista.reportadoEn().toString());
         datos.put("retirado", false);
         return datos;
     }
@@ -131,8 +155,21 @@ public class RetrasoService {
             throw new BusinessException(
                     "Solo se puede avisar de un retraso en un plan ya confirmado");
         }
-        if (plan.yaTermino(Instant.now())) {
+        Instant ahora = Instant.now();
+        if (plan.yaTermino(ahora)) {
             throw new BusinessException("Este plan ya terminó: no se puede avisar de un retraso");
+        }
+        // Un aviso con días de antelación se quedaba en la vista del evento
+        // hasta el día del plan, cuando ya nadie recordaba si seguía en pie.
+        // Si falta tanto, lo que toca es reportar un imprevisto.
+        VentanaPlan ventana = plan.getVentanaConfirmada();
+        if (ventana != null) {
+            Instant inicio = ZonaHoraria.instante(ventana.getFecha(), ventana.getHoraInicio());
+            if (inicio.isAfter(ahora.plus(ANTELACION_MAXIMA))) {
+                throw new BusinessException(
+                        "Solo se puede avisar de un retraso en las 24 horas previas al plan. Podrás hacerlo desde el "
+                                + ventana.getFecha().minusDays(1) + " a las " + ventana.getHoraInicio() + ".");
+            }
         }
     }
 

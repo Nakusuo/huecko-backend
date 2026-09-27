@@ -16,4 +16,10 @@ public interface AlertaRetrasoRepository extends MongoRepository<AlertaRetraso, 
 
     /** Devuelve cuántas alertas borró: 0 si esa persona no había avisado. */
     long deleteByPlanIdAndUsuarioId(String planId, String usuarioId);
+
+    /**
+     * Todas las del plan. Un retraso se refiere a una fecha concreta: cuando el
+     * plan se cancela o cambia de fecha, «llego 15 minutos tarde» ya no dice nada.
+     */
+    long deleteByPlanId(String planId);
 }

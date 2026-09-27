@@ -48,6 +48,8 @@ management:
       show-details: when-authorized
 
 huecko:
+  # La pone Maven al empaquetar (filtrado de recursos del parent de Spring Boot).
+  version: '@project.version@'
   jwt:
     # Sin valor por defecto a propósito: fuera del perfil `dev` hay que definir
     # HUECKO_JWT_SECRET o la aplicación no arranca. La clave de desarrollo vive
@@ -61,6 +63,10 @@ huecko:
   # sin perfil, o con un perfil mal escrito, no crea cuentas de demo.
   seed:
     enabled: false
+  # Correos (separados por coma) que pasan a administrador al arrancar. Deben
+  # tener cuenta ya creada. Vacío: nadie se promueve.
+  admin:
+    emails: ${HUECKO_ADMIN_EMAILS:}
   planes:
     # RF-10: barrido que cierra las votaciones con el plazo vencido y confirma
     # la ventana ganadora. Se puede apagar en pruebas.

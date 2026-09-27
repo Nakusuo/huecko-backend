@@ -88,6 +88,41 @@ cualquier otro perfil, si `HUECKO_JWT_SECRET` no está definida la API no arranc
 y con `prod` tampoco arranca si sigue siendo la clave de ejemplo: con ella
 cualquiera podría firmar un token a nombre de otra persona.
 
+#### Administradores
+
+Las cuentas tienen un rol de plataforma, `rolSistema` (`USUARIO` o `ADMIN`),
+distinto del rol dentro de un grupo. Todo `/api/admin/**` exige `ADMIN`; una
+cuenta normal recibe 403. El rol viaja en el JWT, así que un cambio de rol se
+nota en el siguiente inicio de sesión.
+
+- **Desarrollo:** el seed crea `admin@huecko.com` / `admin1234`.
+- **Producción:** no hay seed. Regístrate con la cuenta que vaya a administrar,
+  pon su correo en `HUECKO_ADMIN_EMAILS` (varios, separados por coma) y
+  reinicia. Con `ddl-auto: validate`, la columna hay que crearla antes a mano:
+
+  ```sql
+  ALTER TABLE usuarios ADD COLUMN rol_sistema VARCHAR(20) NOT NULL DEFAULT 'USUARIO';
+  ALTER TABLE usuarios ADD COLUMN suspendido BOOLEAN NOT NULL DEFAULT FALSE;
+  ```
+
+El admin **observa, no gestiona**: no navega cuentas ni grupos, ni participa en
+ellos. Lo que ve en `/api/admin/**`:
+
+| Ruta | Qué da |
+| --- | --- |
+| `GET /resumen` | Cifras agregadas de uso (sin nombres ni agendas). |
+| `GET /salud` | PostgreSQL, MongoDB y tiempo real, con latencia; las tareas programadas (última pasada, fallos, elementos atrasados); versión, memoria y tiempo encendido. |
+| `GET /fallos`, `PATCH /fallos/{id}/estado` | Errores 500, de tareas y del navegador, agrupados por huella (tipo + lugar + línea), con su número de ocurrencias. Si uno resuelto reaparece, se reabre. |
+| `GET /reportes`, `PATCH /reportes/{id}/estado` | Lo que las personas envían desde «Reportar un problema». |
+| `PATCH /reportes/{id}/suspension` | Única acción sobre una cuenta: suspender o reactivar la que señala un reporte de conducta. A un admin no. |
+| `GET /consola/logs?desde=&nivel=` | Las últimas 1000 líneas del log (INFO+ propio, WARN+ de librerías), para leerlas en vivo. |
+| `GET /consola/configuracion` | Configuración activa en solo lectura, sin secretos. |
+| `GET /pendientes` | Fallos y reportes nuevos, para los contadores del panel. |
+
+Las personas envían a `POST /api/reportes` (máximo 5 por hora) y el frontend manda
+sus errores de JavaScript a `POST /api/reportes/errores` (máximo 20 cada 10 min).
+Una cuenta suspendida no puede entrar y su token deja de valer al momento.
+
 ### 2. Levantar las bases
 
 ```bash

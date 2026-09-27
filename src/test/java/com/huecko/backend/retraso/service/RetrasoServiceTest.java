@@ -4,6 +4,7 @@ import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.AlertaRetraso;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
+import com.huecko.backend.mongo.repository.AusenciaRepository;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
@@ -60,6 +61,7 @@ class RetrasoServiceTest {
     @Mock private MiembroGrupoRepository miembroGrupoRepository;
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private NotificadorTiempoReal notificador;
+    @Mock private AusenciaRepository ausenciaRepository;
 
     private RetrasoService servicio;
     private Usuario ana;
@@ -67,7 +69,7 @@ class RetrasoServiceTest {
     @BeforeEach
     void preparar() {
         servicio = new RetrasoService(alertaRepository, planRepository,
-                miembroGrupoRepository, usuarioRepository, notificador);
+                miembroGrupoRepository, usuarioRepository, notificador, ausenciaRepository);
 
         ana = Usuario.builder().id(UUID.randomUUID()).nombre("Ana").email("ana@huecko.app").build();
         when(usuarioRepository.findById(ana.getId())).thenReturn(Optional.of(ana));
@@ -104,6 +106,59 @@ class RetrasoServiceTest {
                 .containsEntry("minutosEstimados", 20)
                 .containsEntry("nombreUsuario", "Ana")
                 .containsEntry("retirado", false);
+    }
+
+    @Test
+    @DisplayName("El evento de retraso trae usuarioId, corregido y reportadoEn, como la lista")
+    void elEventoTraeLosCamposDeLaLista() {
+        planEnEstado(Plan.Estado.CONFIRMADO);
+        Instant antes = Instant.now().minusSeconds(600);
+        when(alertaRepository.findByPlanIdAndUsuarioId(PLAN.toString(), ana.getId().toString()))
+                .thenReturn(Optional.of(AlertaRetraso.builder()
+                        .id("a-1").planId(PLAN.toString()).grupoId(GRUPO.toString())
+                        .usuarioId(ana.getId().toString()).nombreUsuario("Ana")
+                        .minutosEstimados(10).creadoEn(antes).actualizadoEn(antes)
+                        .build()));
+
+        servicio.reportar(ana.getId(), PLAN, 25);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> datos = ArgumentCaptor.forClass(Map.class);
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.RETRASO_REPORTADO), datos.capture());
+        assertThat(datos.getValue())
+                .containsEntry("usuarioId", ana.getId().toString())
+                .containsEntry("corregido", true)
+                // El primer aviso, no la corrección: es lo que enseña la lista.
+                .containsEntry("reportadoEn", antes.toString());
+    }
+
+    @Test
+    @DisplayName("Un primer aviso viaja con corregido = false")
+    void primerAvisoNoEstaCorregido() {
+        planEnEstado(Plan.Estado.CONFIRMADO);
+
+        servicio.reportar(ana.getId(), PLAN, 5);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> datos = ArgumentCaptor.forClass(Map.class);
+        verify(notificador).aGrupo(eq(GRUPO),
+                eq(EventoTiempoReal.Tipo.RETRASO_REPORTADO), datos.capture());
+        assertThat(datos.getValue()).containsEntry("corregido", false).containsKey("reportadoEn");
+    }
+
+    @Test
+    @DisplayName("Quien ya reporto ausencia en el plan no puede avisar de un retraso")
+    void conAusenciaNoHayRetraso() {
+        planEnEstado(Plan.Estado.CONFIRMADO);
+        when(ausenciaRepository.existsByPlanIdAndUsuarioId(PLAN.toString(), ana.getId().toString()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, 10))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("no vas a este plan");
+        verify(alertaRepository, never()).save(any());
+        verify(notificador, never()).aGrupo(any(), any(), anyMap());
     }
 
     @Test
@@ -224,7 +279,54 @@ class RetrasoServiceTest {
                 .hasMessageContaining("terminó");
     }
 
+    @Test
+    @DisplayName("Con más de 24 h por delante no se puede avisar de un retraso")
+    void conMasDe24HorasNoSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        plan.setVentanaConfirmada(ventanaQueEmpiezaEn(java.time.Duration.ofHours(30)));
+
+        assertThatThrownBy(() -> servicio.reportar(ana.getId(), PLAN, 10))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("24 horas previas");
+        verify(alertaRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Dentro de las 24 h previas sí se puede avisar")
+    void dentroDe24HorasSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        plan.setVentanaConfirmada(ventanaQueEmpiezaEn(java.time.Duration.ofHours(23)));
+
+        assertThat(servicio.reportar(ana.getId(), PLAN, 10).minutosEstimados()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("Con el plan ya empezado (y sin terminar) se sigue pudiendo avisar")
+    void conElPlanEmpezadoSeAvisa() {
+        Plan plan = planEnEstado(Plan.Estado.CONFIRMADO);
+        java.time.LocalDateTime inicio = java.time.LocalDateTime
+                .now(com.huecko.backend.common.ZonaHoraria.ZONA).minusMinutes(10);
+        java.time.LocalDateTime fin = inicio.plusHours(3);
+        plan.setVentanaConfirmada(VentanaPlan.builder()
+                .fecha(fin.toLocalDate())
+                .horaInicio(fin.toLocalDate().equals(inicio.toLocalDate()) ? inicio.toLocalTime() : LocalTime.MIN)
+                .horaFin(fin.toLocalTime())
+                .build());
+
+        assertThat(servicio.reportar(ana.getId(), PLAN, 10).minutosEstimados()).isEqualTo(10);
+    }
+
     /* ------------------------------------------------------------------ */
+
+    private VentanaPlan ventanaQueEmpiezaEn(java.time.Duration falta) {
+        java.time.LocalDateTime inicio = java.time.LocalDateTime
+                .now(com.huecko.backend.common.ZonaHoraria.ZONA).plus(falta);
+        return VentanaPlan.builder()
+                .fecha(inicio.toLocalDate())
+                .horaInicio(inicio.toLocalTime())
+                .horaFin(LocalTime.of(23, 59, 59))
+                .build();
+    }
 
     private Plan planEnEstado(Plan.Estado estado) {
         Plan plan = Plan.builder()

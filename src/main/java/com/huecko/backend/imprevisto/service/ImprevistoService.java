@@ -1,9 +1,13 @@
 package com.huecko.backend.imprevisto.service;
 
+import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.imprevisto.dto.ImprevistoDtos;
+import com.huecko.backend.mongo.document.Ausencia;
 import com.huecko.backend.mongo.document.VotacionExpres;
+import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
+import com.huecko.backend.mongo.repository.AusenciaRepository;
 import com.huecko.backend.mongo.repository.VotacionExpresOperaciones;
 import com.huecko.backend.mongo.repository.VotacionExpresRepository;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
@@ -55,6 +59,11 @@ public class ImprevistoService {
     private final UsuarioRepository usuarioRepository;
     private final EvaluadorCriticidad evaluador;
     private final NotificadorTiempoReal notificador;
+    private final AusenciaRepository ausenciaRepository;
+    private final AlertaRetrasoRepository alertaRetrasoRepository;
+
+    /** Nadie vota en menos de esto, por cerca que esté el plan. */
+    private static final Duration PLAZO_MINIMO = Duration.ofMinutes(5);
 
     /** RF-17: «plazo corto». Una hora es el ejemplo del documento. */
     @Value("${huecko.imprevistos.plazo-minutos:60}")
@@ -84,6 +93,14 @@ public class ImprevistoService {
             throw new BusinessException("Este plan ya terminó: no se pueden reportar imprevistos");
         }
 
+        // Antes de nada: un segundo aviso de la misma persona no es un hecho
+        // nuevo, y cada uno volvía a notificar al grupo entero. Vale para las
+        // dos ramas; tras reagendar, las ausencias viejas se borran y se puede
+        // volver a avisar (ver PlanService.reagendar).
+        if (ausenciaRepository.existsByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString())) {
+            throw new BusinessException("Ya reportaste tu ausencia en este plan");
+        }
+
         if (votacionRepository.findByPlanIdAndEstado(
                 planId.toString(), VotacionExpres.Estado.ABIERTA).isPresent()) {
             // Dos votaciones exprés a la vez sobre el mismo plan dejarían al
@@ -103,23 +120,23 @@ public class ImprevistoService {
                 planId, veredicto.criticidad(), veredicto.razon(), veredicto.origen());
         String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
 
+        Instant ahora = Instant.now();
+        // Se guarda primero la ausencia: su índice único es lo que frena dos
+        // avisos simultáneos de la misma persona, y así ninguno de los dos
+        // llega a abrir votación ni a notificar.
+        Ausencia ausencia = registrarAusencia(plan, usuario, motivoLimpio, veredicto.esCritica(), ahora);
+
         // RF-19: baja no crítica. Se informa y el plan sigue su curso.
         if (!veredicto.esCritica()) {
+            retirarRetraso(plan, usuarioId);
             notificador.aGrupo(plan.getGrupo().getId(),
                     EventoTiempoReal.Tipo.AUSENCIA_REPORTADA,
-                    datosDeAusencia(plan, usuario, motivoLimpio));
+                    datosDeAusencia(plan, ausencia));
             return new ImprevistoDtos.ResultadoReporte(
                     veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(), null);
         }
 
-        // Quien ya abrió una votación en este plan no puede abrir otra: sin esto,
-        // tras un MANTENER la misma persona podía reabrirla una y otra vez.
-        if (votacionRepository.existsByPlanIdAndUsuarioReporta(planId.toString(), usuarioId.toString())) {
-            throw new BusinessException("Ya reportaste tu ausencia en este plan");
-        }
-
         // RF-17: baja crítica. Se abre la votación exprés.
-        Instant ahora = Instant.now();
         VotacionExpres votacion;
         try {
             votacion = votacionRepository.save(VotacionExpres.builder()
@@ -135,28 +152,103 @@ public class ImprevistoService {
                     .votos(new LinkedHashMap<>())
                     .miembrosDelGrupo((int) miembroGrupoRepository.countByGrupo_Id(plan.getGrupo().getId()))
                     .abiertaEn(ahora)
-                    .expiraEn(ahora.plus(Duration.ofMinutes(plazoMinutos)))
+                    .expiraEn(calcularExpiracion(plan, ahora))
                     .build());
-        } catch (DuplicateKeyException ex) {
-            // Otro aviso abrió la votación en el mismo instante (índice único
-            // `uniq_abierta_por_plan`).
-            throw new BusinessException("Ya hay una votación exprés abierta para este plan");
+        } catch (RuntimeException ex) {
+            // Sin votación, la ausencia crítica no se ha podido tramitar: se
+            // deshace, o esa persona quedaría marcada y sin poder reintentar.
+            ausenciaRepository.deleteByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString());
+            if (ex instanceof DuplicateKeyException) {
+                // Otro aviso abrió la votación en el mismo instante (índice
+                // único `uniq_abierta_por_plan`).
+                throw new BusinessException("Ya hay una votación exprés abierta para este plan");
+            }
+            throw ex;
         }
 
+        retirarRetraso(plan, usuarioId);
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA,
                 datosDeVotacion(plan, votacion));
 
         return new ImprevistoDtos.ResultadoReporte(
                 veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(),
-                ImprevistoDtos.VotacionExpresResponse.from(votacion, usuarioId.toString()));
+                aRespuesta(votacion, usuarioId));
+    }
+
+    private Ausencia registrarAusencia(Plan plan, Usuario usuario, String motivo, boolean critica, Instant ahora) {
+        try {
+            return ausenciaRepository.save(Ausencia.builder()
+                    .planId(plan.getId().toString())
+                    .grupoId(plan.getGrupo().getId().toString())
+                    .usuarioId(usuario.getId().toString())
+                    .nombreUsuario(usuario.getNombre())
+                    .motivo(motivo)
+                    .critica(critica)
+                    .reportadoEn(ahora)
+                    .build());
+        } catch (DuplicateKeyException ex) {
+            // El mismo aviso enviado dos veces a la vez (doble clic, reintento
+            // de red): la comprobación previa no lo frena, el índice sí.
+            throw new BusinessException("Ya reportaste tu ausencia en este plan");
+        }
+    }
+
+    /**
+     * Quien no viene deja de llegar tarde. Sin esto, la fila de puntualidad
+     * seguía diciendo «Ana llega 10 minutos tarde» junto a «Ana no viene».
+     * Se avisa con el mismo evento que un retiro a mano para que el cliente
+     * no necesite una regla nueva.
+     */
+    private void retirarRetraso(Plan plan, UUID usuarioId) {
+        long borradas = alertaRetrasoRepository.deleteByPlanIdAndUsuarioId(
+                plan.getId().toString(), usuarioId.toString());
+        if (borradas > 0) {
+            notificador.aGrupo(plan.getGrupo().getId(),
+                    EventoTiempoReal.Tipo.RETRASO_REPORTADO,
+                    Map.of("planId", plan.getId().toString(),
+                            "usuarioId", usuarioId.toString(),
+                            "retirado", true));
+        }
+    }
+
+    /** RF-19: quién no viene, críticas y no críticas, para pintarlo al recargar. */
+    @Transactional(readOnly = true)
+    public List<ImprevistoDtos.AusenciaResponse> ausencias(UUID usuarioId, UUID planId) {
+        planConAcceso(usuarioId, planId);
+        return ausenciaRepository.findByPlanIdOrderByReportadoEnAsc(planId.toString()).stream()
+                .map(ImprevistoDtos.AusenciaResponse::from)
+                .toList();
+    }
+
+    /**
+     * El plazo configurado, pero sin pasar del inicio del plan: una votación
+     * que cierra cuando el plan ya empezó decide tarde, y un MANTENER por
+     * defecto llegaría con la gente ya en el sitio. Aun así se dejan al menos
+     * cinco minutos, o un aviso a última hora cerraría sin que nadie lo viera.
+     */
+    private Instant calcularExpiracion(Plan plan, Instant ahora) {
+        Instant limite = ahora.plus(Duration.ofMinutes(plazoMinutos));
+        if (plan.getVentanaConfirmada() != null) {
+            Instant inicio = ZonaHoraria.instante(
+                    plan.getVentanaConfirmada().getFecha(), plan.getVentanaConfirmada().getHoraInicio());
+            if (inicio.isBefore(limite)) {
+                limite = inicio;
+            }
+        }
+        Instant minimo = ahora.plus(PLAZO_MINIMO);
+        return limite.isBefore(minimo) ? minimo : limite;
     }
 
     /* ------------------------------------------------------------------ *
      * Votar (RF-17)
      * ------------------------------------------------------------------ */
 
-    @Transactional(readOnly = true)
+    /**
+     * No es de solo lectura: si con este voto ya ha votado todo el que puede,
+     * la votación se cierra aquí mismo y el resultado se aplica al plan.
+     */
+    @Transactional
     public ImprevistoDtos.VotacionExpresResponse votar(UUID usuarioId, UUID planId,
                                                        VotacionExpres.Opcion opcion) {
         Plan plan = planConAcceso(usuarioId, planId);
@@ -165,6 +257,10 @@ public class ImprevistoService {
                 .findByPlanIdAndEstado(planId.toString(), VotacionExpres.Estado.ABIERTA)
                 .orElseThrow(() -> new NotFoundException(
                         "No hay ninguna votación exprés abierta para este plan"));
+
+        if (usuarioId.toString().equals(votacion.getUsuarioReporta())) {
+            throw new BusinessException("Quien reporta el imprevisto no vota");
+        }
 
         if (Instant.now().isAfter(votacion.getExpiraEn())) {
             // El barrido aún no ha pasado, pero el plazo ya venció: aceptar el
@@ -191,7 +287,17 @@ public class ImprevistoService {
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTO_EXPRES_ACTUALIZADO, datos);
 
-        return ImprevistoDtos.VotacionExpresResponse.from(guardada, usuarioId.toString());
+        // Cierre anticipado: si ya votaron todos, esperar al plazo solo retrasa
+        // una decisión que no va a cambiar. Pasa por el mismo cierre que el
+        // barrido, con su reclamo atómico, así que no se aplica dos veces.
+        if (guardada.votosEmitidos() >= guardada.votantesPosibles()) {
+            VotacionExpres cerrada = cerrarYDevolver(guardada.getId())
+                    .or(() -> votacionRepository.findById(guardada.getId()))
+                    .orElse(guardada);
+            return aRespuesta(cerrada, usuarioId);
+        }
+
+        return aRespuesta(guardada, usuarioId);
     }
 
     @Transactional(readOnly = true)
@@ -199,7 +305,7 @@ public class ImprevistoService {
         planConAcceso(usuarioId, planId);
         return votacionRepository
                 .findByPlanIdAndEstado(planId.toString(), VotacionExpres.Estado.ABIERTA)
-                .map(v -> ImprevistoDtos.VotacionExpresResponse.from(v, usuarioId.toString()));
+                .map(v -> aRespuesta(v, usuarioId));
     }
 
     /* ------------------------------------------------------------------ *
@@ -214,14 +320,19 @@ public class ImprevistoService {
     /**
      * Aplica el resultado de una votación exprés.
      *
-     * RF-18: sin ningún voto se aplica el resultado por defecto. «Sin quórum»
-     * se interpreta como «nadie votó», no como «votó menos de la mitad»: con
-     * un plazo de una hora, exigir mayoría del grupo cancelaría planes por
-     * simple falta de atención, que es justo lo contrario de lo que busca el
-     * módulo.
+     * RF-18: sin quórum se aplica el resultado por defecto. El quórum es de dos
+     * votos (o de todos los que pueden votar, si son menos; ver
+     * {@link VotacionExpres#quorum()}), no la mitad del grupo: con un plazo de
+     * una hora, exigir mayoría cancelaría planes por simple falta de atención,
+     * pero un único voto tampoco debería poder cancelar el plan de seis.
      */
     @Transactional
     public void cerrar(String votacionId) {
+        cerrarYDevolver(votacionId);
+    }
+
+    /** El cierre de verdad. Devuelve la votación cerrada, o vacío si ya la había cerrado otro. */
+    private Optional<VotacionExpres> cerrarYDevolver(String votacionId) {
         Instant ahora = Instant.now();
 
         // Se marca CERRADA de forma atómica antes de contar. Si ya lo estaba,
@@ -229,7 +340,7 @@ public class ImprevistoService {
         // aquí ningún voto nuevo entra, así que el recuento es definitivo.
         VotacionExpres votacion = operaciones.reclamarParaCerrar(votacionId, ahora).orElse(null);
         if (votacion == null) {
-            return;
+            return Optional.empty();
         }
 
         /*
@@ -249,7 +360,7 @@ public class ImprevistoService {
                 @Override
                 public void afterCompletion(int status) {
                     if (status == STATUS_COMMITTED) {
-                        avisarCierre(grupoId, aviso.get());
+                        trasCerrar(grupoId, votacion, aviso.get());
                     } else {
                         log.warn("El cierre de la votación exprés {} no se guardó: se reabre", votacionId);
                         operaciones.reabrir(votacionId);
@@ -259,15 +370,16 @@ public class ImprevistoService {
         }
 
         try {
-            boolean sinVotos = votacion.getVotos() == null || votacion.getVotos().isEmpty();
-            VotacionExpres.Opcion resultado = sinVotos
+            int emitidos = votacion.votosEmitidos();
+            boolean sinQuorum = emitidos == 0 || emitidos < votacion.quorum();
+            VotacionExpres.Opcion resultado = sinQuorum
                     ? resultadoPorDefecto
                     : masVotada(votacion.getVotos());
 
             votacion.setEstado(VotacionExpres.Estado.CERRADA);
             votacion.setCerradaEn(ahora);
             votacion.setResultado(resultado);
-            votacion.setResultadoPorDefecto(sinVotos);
+            votacion.setResultadoPorDefecto(sinQuorum);
             // Solo ahora se marca para purga: mientras estaba abierta, el índice
             // TTL la ignoraba porque este campo era nulo.
             votacion.setPurgarEn(ahora.plus(Duration.ofDays(diasPurga)));
@@ -276,7 +388,7 @@ public class ImprevistoService {
             aviso.set(aplicarAlPlan(votacion, resultado));
 
             log.info("Votación exprés {} cerrada con {}{}", votacionId, resultado,
-                    sinVotos ? " (por defecto, nadie votó)" : "");
+                    sinQuorum ? " (por defecto, sin quórum: " + emitidos + " voto(s))" : "");
         } catch (RuntimeException ex) {
             // Sin transacción no hay afterCompletion que la reabra.
             if (!conTransaccion) {
@@ -286,8 +398,33 @@ public class ImprevistoService {
         }
 
         if (!conTransaccion) {
-            avisarCierre(grupoId, aviso.get());
+            trasCerrar(grupoId, votacion, aviso.get());
         }
+        return Optional.of(votacion);
+    }
+
+    /**
+     * Lo que sigue a un cierre ya guardado. Tras el commit, como el aviso: si
+     * el cambio del plan no llega a Postgres la votación se reabre, y los
+     * retrasos tienen que seguir ahí.
+     *
+     * Con CANCELAR o REAGENDAR la fecha a la que se llegaba tarde ya no
+     * existe; los retrasos se quedaban en la vista del plan y reaparecían, con
+     * sus minutos viejos, cuando el plan se volvía a confirmar.
+     */
+    private void trasCerrar(UUID grupoId, VotacionExpres votacion, Map<String, Object> datos) {
+        if (votacion.getResultado() == VotacionExpres.Opcion.CANCELAR
+                || votacion.getResultado() == VotacionExpres.Opcion.REAGENDAR) {
+            try {
+                alertaRetrasoRepository.deleteByPlanId(votacion.getPlanId());
+            } catch (RuntimeException ex) {
+                // El plan ya cambió: unos retrasos huérfanos no justifican
+                // perder el aviso del resultado.
+                log.warn("No se pudieron borrar los retrasos del plan {}: {}",
+                        votacion.getPlanId(), ex.getMessage());
+            }
+        }
+        avisarCierre(grupoId, datos);
     }
 
     private void avisarCierre(UUID grupoId, Map<String, Object> datos) {
@@ -364,14 +501,17 @@ public class ImprevistoService {
 
     /* ------------------------------------------------------------------ */
 
-    private Map<String, Object> datosDeAusencia(Plan plan, Usuario usuario, String motivo) {
+    /** Los campos de AusenciaResponse, para añadirla a la lista sin volver a pedirla. */
+    private Map<String, Object> datosDeAusencia(Plan plan, Ausencia ausencia) {
         Map<String, Object> datos = new LinkedHashMap<>();
         datos.put("planId", plan.getId().toString());
         datos.put("tituloPlan", plan.getTitulo());
-        datos.put("usuarioId", usuario.getId().toString());
-        datos.put("nombreUsuario", usuario.getNombre());
-        if (motivo != null) {
-            datos.put("motivo", motivo);
+        datos.put("usuarioId", ausencia.getUsuarioId());
+        datos.put("nombreUsuario", ausencia.getNombreUsuario());
+        datos.put("critica", ausencia.isCritica());
+        datos.put("reportadoEn", ausencia.getReportadoEn().toString());
+        if (ausencia.getMotivo() != null) {
+            datos.put("motivo", ausencia.getMotivo());
         }
         return datos;
     }
@@ -381,6 +521,8 @@ public class ImprevistoService {
         datos.put("planId", plan.getId().toString());
         datos.put("tituloPlan", plan.getTitulo());
         datos.put("votacionId", votacion.getId());
+        // Quien la origina: su cliente no debe pedirse votar a sí mismo.
+        datos.put("usuarioId", votacion.getUsuarioReporta());
         datos.put("nombreReporta", votacion.getNombreReporta());
         datos.put("razonCriticidad", votacion.getRazonCriticidad());
         datos.put("expiraEn", votacion.getExpiraEn().toString());
@@ -388,6 +530,10 @@ public class ImprevistoService {
             datos.put("motivo", votacion.getMotivo());
         }
         return datos;
+    }
+
+    private ImprevistoDtos.VotacionExpresResponse aRespuesta(VotacionExpres votacion, UUID usuarioId) {
+        return ImprevistoDtos.VotacionExpresResponse.from(votacion, usuarioId.toString(), resultadoPorDefecto);
     }
 
     private Plan planConAcceso(UUID usuarioId, UUID planId) {
