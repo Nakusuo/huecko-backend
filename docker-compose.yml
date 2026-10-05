@@ -58,6 +58,7 @@ services:
     restart: unless-stopped
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
     ports:
       - "127.0.0.1:${HUECKO_IA_PORT:-8000}:8000"
 
