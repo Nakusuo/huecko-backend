@@ -115,10 +115,10 @@ public class ImprevistoService {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
 
-        EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId);
+        String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
+        EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId, motivoLimpio);
         log.debug("Criticidad de la ausencia en el plan {}: {} ({}) por {}",
                 planId, veredicto.criticidad(), veredicto.razon(), veredicto.origen());
-        String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
 
         Instant ahora = Instant.now();
         // Se guarda primero la ausencia: su índice único es lo que frena dos

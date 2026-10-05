@@ -204,3 +204,19 @@ Toda respuesta de error, incluidas las de Spring Security, sale igual:
 ```json
 { "timestamp": "2026-09-04T18:20:11Z", "error": "Solicitud inválida", "mensaje": "horaFin debe ser posterior a horaInicio" }
 ```
+
+### Servicio de IA (opcional)
+
+El repo `huecko-ai-service` añade IA sin volverla obligatoria: si no responde a
+tiempo, cada función usa su versión sin IA. Hoy cubre RF-16, la criticidad de
+una ausencia leída a partir del motivo.
+
+| Variable | Para qué |
+| --- | --- |
+| `HUECKO_IMPREVISTOS_EVALUADOR=ia` | Activa la criticidad con IA (por defecto `reglas`). |
+| `HUECKO_IA_URL` | Dirección del servicio (por defecto `http://localhost:8000`). |
+| `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
+| `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
+
+Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
+reglas; el modelo solo decide el resto, y solo si hay motivo escrito.

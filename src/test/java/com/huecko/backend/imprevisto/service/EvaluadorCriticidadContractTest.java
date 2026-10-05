@@ -1,10 +1,13 @@
 package com.huecko.backend.imprevisto.service;
 
+import com.huecko.backend.ia.ClienteIA;
+import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -15,6 +18,9 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * El contrato de RF-16, contra <b>todas</b> las implementaciones.
@@ -38,9 +44,24 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class EvaluadorCriticidadContractTest {
 
     /** Al añadir una implementación, se añade aquí. */
-    static Stream<EvaluadorCriticidad> implementaciones() {
-        return Stream.of(new EvaluadorPorReglas());
+    static Stream<Named<EvaluadorCriticidad>> implementaciones() {
+        ClienteIA caida = mock(ClienteIA.class);
+        when(caida.criticidad(any())).thenThrow(new IaNoDisponibleException("caída", null));
+
+        // Un modelo que siempre quita importancia: no puede pasar por encima
+        // de las reglas que no admiten matices (contratos 4 y 5).
+        ClienteIA laxa = mock(ClienteIA.class);
+        when(laxa.criticidad(any())).thenReturn(
+                new ClienteIA.RespuestaCriticidad("NO_CRITICA", "su ausencia no impide el plan"));
+
+        return Stream.of(
+                Named.of("reglas", new EvaluadorPorReglas()),
+                Named.of("IA caída", new EvaluadorPorIA(caida)),
+                Named.of("IA que nunca ve crítico", new EvaluadorPorIA(laxa)));
     }
+
+    /** Con motivo, para que la IA tenga algo que leer y entre en juego. */
+    private static final String MOTIVO = "Me surgió un imprevisto en el trabajo";
 
     private static final UUID ANA = UUID.randomUUID();
     private static final UUID BRUNO = UUID.randomUUID();
@@ -55,7 +76,7 @@ class EvaluadorCriticidadContractTest {
             UUID quien = (UUID) caso[2];
 
             assertThatCode(() -> {
-                var v = evaluador.evaluar(plan, miembro, quien);
+                var v = evaluador.evaluar(plan, miembro, quien, MOTIVO);
                 assertThat(v).isNotNull();
                 assertThat(v.criticidad()).isNotNull();
             }).as("caso %s", caso[3]).doesNotThrowAnyException();
@@ -67,7 +88,7 @@ class EvaluadorCriticidadContractTest {
     @DisplayName("Contrato 2: siempre explica por qué, con una razón legible")
     void siempreExplica(EvaluadorCriticidad evaluador) {
         for (Object[] caso : casos()) {
-            var v = evaluador.evaluar((Plan) caso[0], (MiembroGrupo) caso[1], (UUID) caso[2]);
+            var v = evaluador.evaluar((Plan) caso[0], (MiembroGrupo) caso[1], (UUID) caso[2], MOTIVO);
 
             assertThat(v.razon())
                     .as("caso %s", caso[3])
@@ -89,7 +110,7 @@ class EvaluadorCriticidadContractTest {
     @DisplayName("Contrato 3: siempre dice de dónde salió el veredicto")
     void siempreDiceSuOrigen(EvaluadorCriticidad evaluador) {
         for (Object[] caso : casos()) {
-            var v = evaluador.evaluar((Plan) caso[0], (MiembroGrupo) caso[1], (UUID) caso[2]);
+            var v = evaluador.evaluar((Plan) caso[0], (MiembroGrupo) caso[1], (UUID) caso[2], MOTIVO);
             assertThat(v.origen()).as("caso %s", caso[3]).isNotNull();
         }
     }
@@ -101,7 +122,7 @@ class EvaluadorCriticidadContractTest {
         // Es el único resultado que no admite matices, sea con reglas o con
         // modelo: si quien organizó la quedada no va, el grupo tiene que
         // decidir. Un evaluador que diga lo contrario está roto.
-        var v = evaluador.evaluar(planCreadoPor(ANA), miembro(false, MiembroGrupo.Rol.MIEMBRO), ANA);
+        var v = evaluador.evaluar(planCreadoPor(ANA), miembro(false, MiembroGrupo.Rol.MIEMBRO), ANA, MOTIVO);
 
         assertThat(v.esCritica()).isTrue();
     }
@@ -112,7 +133,7 @@ class EvaluadorCriticidadContractTest {
     void elImprescindibleNuncaEsPrescindible(EvaluadorCriticidad evaluador) {
         // El flag lo puso el grupo a mano. Ignorarlo sería contradecir una
         // decisión explícita de las personas que usan el producto.
-        var v = evaluador.evaluar(planCreadoPor(ANA), miembro(true, MiembroGrupo.Rol.MIEMBRO), BRUNO);
+        var v = evaluador.evaluar(planCreadoPor(ANA), miembro(true, MiembroGrupo.Rol.MIEMBRO), BRUNO, MOTIVO);
 
         assertThat(v.esCritica()).isTrue();
     }
@@ -125,7 +146,7 @@ class EvaluadorCriticidadContractTest {
                 .grupo(Grupo.builder().id(UUID.randomUUID()).nombre("G").build())
                 .build();
 
-        assertThatCode(() -> evaluador.evaluar(huerfano, miembro(false, MiembroGrupo.Rol.MIEMBRO), ANA))
+        assertThatCode(() -> evaluador.evaluar(huerfano, miembro(false, MiembroGrupo.Rol.MIEMBRO), ANA, MOTIVO))
                 .doesNotThrowAnyException();
     }
 
@@ -139,8 +160,8 @@ class EvaluadorCriticidadContractTest {
         Plan plan = planCreadoPor(ANA);
         MiembroGrupo m = miembro(false, MiembroGrupo.Rol.MIEMBRO);
 
-        var primera = evaluador.evaluar(plan, m, BRUNO);
-        var segunda = evaluador.evaluar(plan, m, BRUNO);
+        var primera = evaluador.evaluar(plan, m, BRUNO, MOTIVO);
+        var segunda = evaluador.evaluar(plan, m, BRUNO, MOTIVO);
 
         assertThat(segunda.criticidad()).isEqualTo(primera.criticidad());
     }

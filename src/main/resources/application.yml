@@ -74,9 +74,16 @@ huecko:
     intervalo-cierre-ms: 60000
     # Margen para que el contexto termine de arrancar antes del primer barrido.
     retardo-inicial-ms: 10000
+  # Servicio de IA (repo huecko-ai-service). Opcional: si no responde dentro
+  # del tiempo máximo, cada función usa su versión sin IA.
+  ia:
+    url: ${HUECKO_IA_URL:http://localhost:8000}
+    # Secreto compartido con el servicio; sin él, el servicio no atiende.
+    token: ${HUECKO_IA_TOKEN:}
+    tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
   imprevistos:
-    # RF-16: quién decide la criticidad. `reglas` es el MVP. El documento deja
-    # un LLM como mejora de fase 2: cuando exista, aquí se pondrá `ia`.
+    # RF-16: quién decide la criticidad. `reglas` es el MVP; `ia` lee además el
+    # motivo con el servicio de IA (huecko.ia) y cae a reglas si este falla.
     evaluador: ${HUECKO_IMPREVISTOS_EVALUADOR:reglas}
     # RF-17: "plazo corto". Una hora es el ejemplo del documento.
     plazo-minutos: ${HUECKO_IMPREVISTOS_PLAZO_MINUTOS:60}
