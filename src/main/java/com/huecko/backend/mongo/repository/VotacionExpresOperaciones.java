@@ -81,6 +81,19 @@ public class VotacionExpresOperaciones {
     }
 
     /**
+     * Guarda la sugerencia de la IA si la votación sigue abierta y aún no
+     * tiene una. Devuelve si se guardó: si ya cerró, la sugerencia sobra.
+     */
+    public boolean guardarRecomendacion(String votacionId, VotacionExpres.Opcion opcion, String razon) {
+        Query query = Query.query(where("_id").is(votacionId)
+                .and("estado").is(VotacionExpres.Estado.ABIERTA)
+                .and("recomendacion").isNull());
+        Update update = new Update().set("recomendacion", opcion).set("razonRecomendacion", razon);
+
+        return mongoTemplate.updateFirst(query, update, VotacionExpres.class).getModifiedCount() > 0;
+    }
+
+    /**
      * Deshace un cierre cuyo cambio en el plan no llegó a guardarse en
      * Postgres. La votación vuelve a estar abierta y el próximo barrido lo
      * reintenta, en vez de quedar cerrada con un resultado que no se aplicó.

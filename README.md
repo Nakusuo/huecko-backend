@@ -217,6 +217,7 @@ una ausencia leída a partir del motivo.
 | `HUECKO_IA_URL` | Dirección del servicio (por defecto `http://localhost:8000`). |
 | `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
 | `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
+| `HUECKO_IA_RECOMENDACIONES=true` | Sugerencia de la IA (CANCELAR, REAGENDAR o MANTENER) en cada votación exprés. Llega en segundo plano; si falla, no hay sugerencia. |
 
 Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
 reglas; el modelo solo decide el resto, y solo si hay motivo escrito.

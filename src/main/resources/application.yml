@@ -81,6 +81,8 @@ huecko:
     # Secreto compartido con el servicio; sin él, el servicio no atiende.
     token: ${HUECKO_IA_TOKEN:}
     tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
+    # Sugerencia de la IA en cada votación exprés que se abre.
+    recomendaciones: ${HUECKO_IA_RECOMENDACIONES:false}
   imprevistos:
     # RF-16: quién decide la criticidad. `reglas` es el MVP; `ia` lee además el
     # motivo con el servicio de IA (huecko.ia) y cae a reglas si este falla.

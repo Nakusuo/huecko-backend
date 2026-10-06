@@ -81,7 +81,10 @@ public final class ImprevistoDtos {
              * interfaz lo tiene fijo, promete al grupo un resultado que no va a
              * ocurrir.
              */
-            VotacionExpres.Opcion resultadoPorDefectoOpcion
+            VotacionExpres.Opcion resultadoPorDefectoOpcion,
+            /** Sugerencia de la IA, o nulo. Llega unos segundos después de abrirse. */
+            VotacionExpres.Opcion recomendacion,
+            String razonRecomendacion
     ) {
 
         public static VotacionExpresResponse from(VotacionExpres v, String usuarioId,
@@ -112,7 +115,9 @@ public final class ImprevistoDtos {
                     v.getEstado() == VotacionExpres.Estado.ABIERTA
                             && !usuarioId.equals(v.getUsuarioReporta())
                             && (v.getExpiraEn() == null || v.getExpiraEn().isAfter(Instant.now())),
-                    resultadoPorDefectoOpcion);
+                    resultadoPorDefectoOpcion,
+                    v.getRecomendacion(),
+                    v.getRazonRecomendacion());
         }
     }
 
