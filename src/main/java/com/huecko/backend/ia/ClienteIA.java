@@ -50,6 +50,17 @@ public class ClienteIA {
         return post("/v1/criticidad", peticion, RespuestaCriticidad.class);
     }
 
+    public record PeticionRecomendacion(String titulo, String lugar, String inicio, Double horasHastaElPlan,
+                                        String motivo, String razonCriticidad, int miembrosQueVotan,
+                                        String resultadoPorDefecto) {}
+
+    public record RespuestaRecomendacion(String opcion, String razon) {}
+
+    /** Votación exprés: qué opción conviene al grupo y por qué. */
+    public RespuestaRecomendacion recomendacion(PeticionRecomendacion peticion) {
+        return post("/v1/votacion-expres/recomendacion", peticion, RespuestaRecomendacion.class);
+    }
+
     private <T> T post(String ruta, Object cuerpo, Class<T> tipo) {
         try {
             T respuesta = http.post().uri(ruta).body(cuerpo).retrieve().body(tipo);

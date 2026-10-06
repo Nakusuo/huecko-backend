@@ -61,6 +61,7 @@ public class ImprevistoService {
     private final NotificadorTiempoReal notificador;
     private final AusenciaRepository ausenciaRepository;
     private final AlertaRetrasoRepository alertaRetrasoRepository;
+    private final RecomendadorVotacion recomendador;
 
     /** Nadie vota en menos de esto, por cerca que esté el plan. */
     private static final Duration PLAZO_MINIMO = Duration.ofMinutes(5);
@@ -170,6 +171,7 @@ public class ImprevistoService {
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA,
                 datosDeVotacion(plan, votacion));
+        recomendador.recomendar(plan, votacion, resultadoPorDefecto);
 
         return new ImprevistoDtos.ResultadoReporte(
                 veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(),
