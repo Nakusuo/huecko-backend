@@ -1,5 +1,6 @@
 server:
-  port: 8080
+  # Render y otras plataformas dicen el puerto con PORT; en local, 8080.
+  port: ${PORT:8080}
 
 spring:
   application:

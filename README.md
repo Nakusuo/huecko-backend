@@ -64,6 +64,10 @@ fueran JPA y el arranque falla.
 > es el manual paso a paso: cómo instalar JDK, Maven y Docker en una máquina
 > donde no hay nada, cómo probar el servicio junto al frontend y qué hacer
 > cuando algo falla. Lo de abajo es el resumen para quien ya tiene el entorno.
+>
+> 🚀 **¿Publicarlo?** [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md): front en
+> Vercel, API e IA en Render (`render.yaml`), Postgres en Neon y Mongo en
+> Atlas, todo en planes gratuitos.
 
 ### Requisitos
 
