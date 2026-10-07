@@ -1,0 +1,27 @@
+# Compila y pasa los tests en cada push a develop/main y en cada PR.
+# Los tests son unitarios: no necesitan Postgres, Mongo ni el servicio de IA.
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - run: ./mvnw -B -ntp verify
