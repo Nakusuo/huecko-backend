@@ -25,3 +25,11 @@ jobs:
           cache: maven
 
       - run: ./mvnw -B -ntp verify
+
+  # Que el Dockerfile siga construyendo. No se publica la imagen.
+  imagen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t huecko-backend:ci .

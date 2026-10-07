@@ -1,0 +1,13 @@
+# Solo hace falta el código y el wrapper de Maven para construir la imagen.
+target/
+.git/
+.github/
+.claude/
+.idea/
+.vscode/
+docker/
+docs/
+*.md
+.env
+*.log
+package-lock.json
