@@ -73,6 +73,12 @@ public interface EvaluadorCriticidad {
      * @param plan      el plan afectado, con su creador
      * @param miembro   la membresía de quien reporta, con su rol y su flag
      * @param usuarioId quien reporta
+     * @param motivo    lo que escribió al avisar, ya recortado; nulo si no escribió nada
      */
-    Veredicto evaluar(Plan plan, MiembroGrupo miembro, UUID usuarioId);
+    Veredicto evaluar(Plan plan, MiembroGrupo miembro, UUID usuarioId, String motivo);
+
+    /** Sin motivo. */
+    default Veredicto evaluar(Plan plan, MiembroGrupo miembro, UUID usuarioId) {
+        return evaluar(plan, miembro, usuarioId, null);
+    }
 }
