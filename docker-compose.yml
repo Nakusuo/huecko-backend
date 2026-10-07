@@ -49,6 +49,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # Servicio de IA (repo huecko-ai-service, clonado al lado de este).
+  # Opcional: solo arranca con `docker compose --profile ia up -d`.
+  ia:
+    profiles: ["ia"]
+    build: ${HUECKO_IA_REPO:-../huecko-ai-service}
+    container_name: huecko-ia
+    restart: unless-stopped
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
+    ports:
+      - "127.0.0.1:${HUECKO_IA_PORT:-8000}:8000"
+
 volumes:
   huecko-postgres-data:
   huecko-mongo-data:

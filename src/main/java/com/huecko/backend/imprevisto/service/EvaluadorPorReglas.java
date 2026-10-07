@@ -36,8 +36,9 @@ import java.util.UUID;
                        havingValue = "reglas", matchIfMissing = true)
 public class EvaluadorPorReglas implements EvaluadorCriticidad {
 
+    /** Las reglas no leen el motivo: solo miran quién es la persona en el plan. */
     @Override
-    public Veredicto evaluar(Plan plan, MiembroGrupo miembro, UUID usuarioId) {
+    public Veredicto evaluar(Plan plan, MiembroGrupo miembro, UUID usuarioId, String motivo) {
         if (plan.getCreadoPor() != null && usuarioId.equals(plan.getCreadoPor().getId())) {
             return Veredicto.critica("propuso este plan", Origen.REGLAS);
         }

@@ -115,6 +115,14 @@ public class VotacionExpres {
     private boolean resultadoPorDefecto;
 
     /**
+     * Lo que sugiere la IA, o nulo si no hay sugerencia (servicio apagado o
+     * caído). Es un consejo para el grupo; no cuenta como voto.
+     */
+    private Opcion recomendacion;
+
+    private String razonRecomendacion;
+
+    /**
      * Índice TTL: Mongo borra el documento cuando llega esta fecha.
      * Nulo mientras la votación está abierta — ver el comentario de la clase.
      */
