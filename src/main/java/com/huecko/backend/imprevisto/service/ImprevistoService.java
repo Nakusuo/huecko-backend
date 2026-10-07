@@ -61,6 +61,7 @@ public class ImprevistoService {
     private final NotificadorTiempoReal notificador;
     private final AusenciaRepository ausenciaRepository;
     private final AlertaRetrasoRepository alertaRetrasoRepository;
+    private final RecomendadorVotacion recomendador;
 
     /** Nadie vota en menos de esto, por cerca que esté el plan. */
     private static final Duration PLAZO_MINIMO = Duration.ofMinutes(5);
@@ -115,10 +116,10 @@ public class ImprevistoService {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
 
-        EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId);
+        String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
+        EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId, motivoLimpio);
         log.debug("Criticidad de la ausencia en el plan {}: {} ({}) por {}",
                 planId, veredicto.criticidad(), veredicto.razon(), veredicto.origen());
-        String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
 
         Instant ahora = Instant.now();
         // Se guarda primero la ausencia: su índice único es lo que frena dos
@@ -170,6 +171,7 @@ public class ImprevistoService {
         notificador.aGrupo(plan.getGrupo().getId(),
                 EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA,
                 datosDeVotacion(plan, votacion));
+        recomendador.recomendar(plan, votacion, resultadoPorDefecto);
 
         return new ImprevistoDtos.ResultadoReporte(
                 veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(),

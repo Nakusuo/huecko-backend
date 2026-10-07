@@ -1,6 +1,9 @@
-# Infraestructura local de Huecko: las dos bases del modelo híbrido.
+# Infraestructura local de Huecko: las dos bases del modelo híbrido y, con
+# perfiles, la API y el servicio de IA.
 #
-#   docker compose up -d
+#   docker compose up -d                              # solo las bases (la API con mvnw)
+#   docker compose --profile ia up -d                 # + servicio de IA
+#   docker compose --profile app --profile ia up -d   # todo en contenedores
 #
 # Los datos de demo NO se cargan aquí sino desde la aplicación
 # (DemoDataSeeder, perfil `dev`). El motivo: el hash BCrypt de la contraseña
@@ -48,6 +51,68 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Servicio de IA (repo huecko-ai-service, clonado al lado de este).
+  # Opcional: solo arranca con `docker compose --profile ia up -d`.
+  ia:
+    profiles: ["ia"]
+    build: ${HUECKO_IA_REPO:-../huecko-ai-service}
+    container_name: huecko-ia
+    restart: unless-stopped
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
+      GEMINI_MODELO: ${GEMINI_MODELO:-gemini-flash-latest}
+      GEMINI_TIEMPO_MAXIMO: ${GEMINI_TIEMPO_MAXIMO:-2.5}
+    ports:
+      - "127.0.0.1:${HUECKO_IA_PORT:-8000}:8000"
+    healthcheck:
+      # La imagen es python-slim, sin curl ni wget.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/salud')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # La API en contenedor. Opcional: solo arranca con `--profile app`, para que
+  # `docker compose up -d` siga dejando el 8080 libre a `./mvnw spring-boot:run`.
+  # Usa el perfil `dev` (seed y clave JWT de ejemplo); para desplegar, la
+  # imagen va con `prod` por defecto, ver Dockerfile.
+  api:
+    profiles: ["app"]
+    build: .
+    container_name: huecko-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-huecko}
+      POSTGRES_USER: ${POSTGRES_USER:-huecko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-huecko}
+      MONGO_HOST: mongo
+      MONGO_DB: ${MONGO_DB:-huecko}
+      MONGO_USER: ${MONGO_USER:-huecko}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-huecko}
+      # Una variable vacía NO cae al valor por defecto de application-dev.yml
+      # (Spring la toma como ""), así que el de desarrollo se repite aquí. Con
+      # SPRING_PROFILES_ACTIVE=prod la API se niega a arrancar con esta clave.
+      HUECKO_JWT_SECRET: ${HUECKO_JWT_SECRET:-cambia-esta-clave-de-desarrollo-huecko-2026-min-32-chars}
+      HUECKO_JWT_EXPIRATION_MINUTES: ${HUECKO_JWT_EXPIRATION_MINUTES:-720}
+      HUECKO_CORS_ORIGINS: ${HUECKO_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      HUECKO_ADMIN_EMAILS: ${HUECKO_ADMIN_EMAILS:-}
+      HUECKO_ZONA_HORARIA: ${HUECKO_ZONA_HORARIA:-America/Lima}
+      # Dentro de la red de compose la IA se llama `ia`, no localhost.
+      HUECKO_IA_URL: http://ia:8000
+      HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
+      HUECKO_IA_TIEMPO_MAXIMO_MS: ${HUECKO_IA_TIEMPO_MAXIMO_MS:-3000}
+      HUECKO_IA_RECOMENDACIONES: ${HUECKO_IA_RECOMENDACIONES:-false}
+      HUECKO_IMPREVISTOS_EVALUADOR: ${HUECKO_IMPREVISTOS_EVALUADOR:-reglas}
+    ports:
+      - "127.0.0.1:${HUECKO_API_PORT:-8080}:8080"
 
 volumes:
   huecko-postgres-data:

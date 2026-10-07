@@ -1,0 +1,86 @@
+# Blueprint de Render: la API y el servicio de IA, en el plan gratuito.
+#
+# Render > New > Blueprint > este repo. Pide en pantalla los valores marcados
+# `sync: false` (bases de datos, dominio del frontend, clave de Gemini…); los
+# secretos compartidos los genera él. Paso a paso en docs/DESPLIEGUE.md.
+#
+# Plan gratuito: cada servicio se duerme tras ~15 min sin peticiones y tarda
+# alrededor de un minuto en despertar. Mientras la API duerme, las votaciones
+# no se cierran; lo hacen todas juntas en cuanto alguien la despierta.
+
+services:
+  - type: web
+    name: huecko-api
+    runtime: docker
+    plan: free
+    region: virginia
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # 512 MB de RAM en el plan gratuito: GC simple y menos compilación JIT
+      # para que quepa y arranque antes.
+      - key: JAVA_TOOL_OPTIONS
+        value: -XX:MaxRAMPercentage=60 -XX:+UseSerialGC -Xss512k -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=48m
+      - key: HUECKO_JWT_SECRET
+        generateValue: true
+      - key: HUECKO_ZONA_HORARIA
+        value: America/Lima
+
+      # Postgres (Neon): jdbc:postgresql://<host>/<base>?sslmode=require
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      # Mongo (Atlas): mongodb+srv://<usuario>:<clave>@<cluster>/huecko?retryWrites=true&w=majority
+      - key: SPRING_DATA_MONGODB_URI
+        sync: false
+
+      # Dominio del frontend en Vercel. Admite comodines para las previews:
+      # https://huecko.vercel.app,https://huecko-*.vercel.app
+      - key: HUECKO_CORS_ORIGINS
+        sync: false
+      # Déjalo vacío al principio: regístrate en la app con tu correo y
+      # después ponlo aquí (ver docs/DESPLIEGUE.md, paso 6).
+      - key: HUECKO_ADMIN_EMAILS
+        sync: false
+
+      # IA: URL pública de huecko-ia (https://huecko-ia-xxxx.onrender.com).
+      - key: HUECKO_IA_URL
+        sync: false
+      - key: HUECKO_IA_TOKEN
+        generateValue: true
+      - key: HUECKO_IMPREVISTOS_EVALUADOR
+        value: ia
+      - key: HUECKO_IA_RECOMENDACIONES
+        value: "true"
+      - key: HUECKO_IA_TIEMPO_MAXIMO_MS
+        value: "3000"
+
+  - type: web
+    name: huecko-ia
+    runtime: docker
+    plan: free
+    region: virginia
+    repo: https://github.com/Nakusuo/huecko-ai-service
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /salud
+    envVars:
+      # El mismo secreto que generó Render para la API.
+      - key: HUECKO_IA_TOKEN
+        fromService:
+          type: web
+          name: huecko-api
+          envVarKey: HUECKO_IA_TOKEN
+      # Clave gratuita de https://aistudio.google.com
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODELO
+        value: gemini-flash-latest
+      - key: GEMINI_TIEMPO_MAXIMO
+        value: "2.5"

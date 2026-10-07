@@ -50,6 +50,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -67,6 +68,7 @@ class ImprevistoServiceTest {
     private static final UUID PLAN = UUID.randomUUID();
 
     @Mock private VotacionExpresRepository votacionRepository;
+    @Mock private RecomendadorVotacion recomendador;
     @Mock private VotacionExpresOperaciones operaciones;
     @Mock private PlanRepository planRepository;
     @Mock private MiembroGrupoRepository miembroGrupoRepository;
@@ -83,7 +85,7 @@ class ImprevistoServiceTest {
     void preparar() {
         servicio = new ImprevistoService(votacionRepository, operaciones, planRepository,
                 miembroGrupoRepository, usuarioRepository, new EvaluadorPorReglas(), notificador,
-                ausenciaRepository, alertaRetrasoRepository);
+                ausenciaRepository, alertaRetrasoRepository, recomendador);
         ReflectionTestUtils.setField(servicio, "plazoMinutos", 60);
         ReflectionTestUtils.setField(servicio, "resultadoPorDefecto", VotacionExpres.Opcion.MANTENER);
         ReflectionTestUtils.setField(servicio, "diasPurga", 7);
@@ -122,6 +124,7 @@ class ImprevistoServiceTest {
         assertThat(r.votacion().puedoVotar()).isFalse();
         verify(notificador).aGrupo(eq(GRUPO),
                 eq(EventoTiempoReal.Tipo.VOTACION_EXPRES_ABIERTA), anyMap());
+        verify(recomendador).recomendar(any(), any(), eq(VotacionExpres.Opcion.MANTENER));
     }
 
     @Test
@@ -137,6 +140,7 @@ class ImprevistoServiceTest {
         verify(notificador).aGrupo(eq(GRUPO),
                 eq(EventoTiempoReal.Tipo.AUSENCIA_REPORTADA), anyMap());
         verify(votacionRepository, never()).save(any());
+        verifyNoInteractions(recomendador);
     }
 
     @Test
