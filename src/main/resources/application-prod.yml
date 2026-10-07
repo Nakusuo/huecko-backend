@@ -1,9 +1,5 @@
-# Perfil de despliegue: sin datos de demo y sin que Hibernate toque el esquema.
-spring:
-  jpa:
-    hibernate:
-      ddl-auto: validate
-
+# Perfil de despliegue: sin datos de demo. El esquema lo lleva Flyway, igual
+# que en desarrollo (ver application.yml).
 huecko:
   seed:
     enabled: false
