@@ -30,13 +30,15 @@ qué vive en Postgres y qué en Mongo.
 ```
 huecko-backend/
 ├── pom.xml
-├── docker-compose.yml            # Postgres + Mongo para desarrollo
-├── .env.example                  # Credenciales y secreto JWT (copiar a .env)
+├── Dockerfile                    # Imagen de la API (perfil prod por defecto)
+├── docker-compose.yml            # Postgres + Mongo; API e IA con perfiles
+├── .env.example                  # Todas las variables (copiar a .env)
 ├── docker/mongo/init/            # Creación de la colección (solo 1ª vez)
 └── src/main/
     ├── resources/
     │   ├── application.yml       # Perfil por defecto (dev): con datos de demo
-    │   └── application-prod.yml  # Sin seed, Hibernate en modo validate
+    │   ├── application-prod.yml  # Sin seed ni detalles de salud
+    │   └── db/migration/         # Esquema de Postgres con Flyway (V1, V2…)
     └── java/com/huecko/backend/
         ├── HueckoBackendApplication.java
         ├── auth/                 # Login, registro y JWT
@@ -62,6 +64,10 @@ fueran JPA y el arranque falla.
 > es el manual paso a paso: cómo instalar JDK, Maven y Docker en una máquina
 > donde no hay nada, cómo probar el servicio junto al frontend y qué hacer
 > cuando algo falla. Lo de abajo es el resumen para quien ya tiene el entorno.
+>
+> 🚀 **¿Publicarlo?** [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md): front en
+> Vercel, API e IA en Render (`render.yaml`), Postgres en Neon y Mongo en
+> Atlas, todo en planes gratuitos.
 
 ### Requisitos
 
@@ -98,12 +104,7 @@ nota en el siguiente inicio de sesión.
 - **Desarrollo:** el seed crea `admin@huecko.com` / `admin1234`.
 - **Producción:** no hay seed. Regístrate con la cuenta que vaya a administrar,
   pon su correo en `HUECKO_ADMIN_EMAILS` (varios, separados por coma) y
-  reinicia. Con `ddl-auto: validate`, la columna hay que crearla antes a mano:
-
-  ```sql
-  ALTER TABLE usuarios ADD COLUMN rol_sistema VARCHAR(20) NOT NULL DEFAULT 'USUARIO';
-  ALTER TABLE usuarios ADD COLUMN suspendido BOOLEAN NOT NULL DEFAULT FALSE;
-  ```
+  reinicia.
 
 El admin **observa, no gestiona**: no navega cuentas ni grupos, ni participa en
 ellos. Lo que ve en `/api/admin/**`:
@@ -144,6 +145,32 @@ Queda escuchando en `http://localhost:8080`. Comprobación rápida:
 ```bash
 curl http://localhost:8080/api/actuator/health
 ```
+
+#### Esquema de Postgres (Flyway)
+
+Al arrancar, Flyway aplica las migraciones de `src/main/resources/db/migration`
+que falten, y Hibernate solo **valida** que las entidades coinciden con el
+esquema (`ddl-auto: validate`, en todos los perfiles). Así una base vacía
+arranca sin pasos a mano, en local y en despliegue.
+
+- **Cambiar una entidad** exige una migración nueva, `V<n>__que_cambia.sql`. Si
+  no, la API no arranca y dice qué columna o tabla no cuadra. Nunca se edita
+  una migración ya aplicada: Flyway compara su checksum y se niega a seguir.
+- **Bases creadas antes de Flyway** (con el antiguo `ddl-auto: update`): se
+  marcan solas como versión 1 y solo se aplica lo posterior. Si la tuya se
+  quedó a medias de algún cambio, `docker compose down -v` y vuelta a empezar.
+
+#### La API en Docker
+
+```bash
+docker compose --profile app up -d --build                # API + bases
+docker compose --profile app --profile ia up -d --build   # + servicio de IA
+```
+
+Con compose la API usa el perfil `dev` (seed incluido) en `localhost:8080`, así
+que no se puede tener a la vez `./mvnw spring-boot:run`. Para desplegar, la
+imagen del `Dockerfile` arranca en `prod`: necesita `HUECKO_JWT_SECRET` propio
+y las credenciales de las bases (ver `.env.example`).
 
 ### 4. Datos de demo
 
@@ -204,3 +231,20 @@ Toda respuesta de error, incluidas las de Spring Security, sale igual:
 ```json
 { "timestamp": "2026-09-04T18:20:11Z", "error": "Solicitud inválida", "mensaje": "horaFin debe ser posterior a horaInicio" }
 ```
+
+### Servicio de IA (opcional)
+
+El repo `huecko-ai-service` añade IA sin volverla obligatoria: si no responde a
+tiempo, cada función usa su versión sin IA. Hoy cubre RF-16, la criticidad de
+una ausencia leída a partir del motivo.
+
+| Variable | Para qué |
+| --- | --- |
+| `HUECKO_IMPREVISTOS_EVALUADOR=ia` | Activa la criticidad con IA (por defecto `reglas`). |
+| `HUECKO_IA_URL` | Dirección del servicio (por defecto `http://localhost:8000`). |
+| `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
+| `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
+| `HUECKO_IA_RECOMENDACIONES=true` | Sugerencia de la IA (CANCELAR, REAGENDAR o MANTENER) en cada votación exprés. Llega en segundo plano; si falla, no hay sugerencia. |
+
+Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
+reglas; el modelo solo decide el resto, y solo si hay motivo escrito.

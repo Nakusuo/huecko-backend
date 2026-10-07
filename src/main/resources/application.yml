@@ -1,5 +1,6 @@
 server:
-  port: 8080
+  # Render y otras plataformas dicen el puerto con PORT; en local, 8080.
+  port: ${PORT:8080}
 
 spring:
   application:
@@ -12,14 +13,19 @@ spring:
     password: ${POSTGRES_PASSWORD:huecko}
   jpa:
     hibernate:
-      # `update` mientras el modelo se mueve. Antes de desplegar hay que pasar a
-      # `validate` y llevar el esquema con Flyway o Liquibase.
-      ddl-auto: update
+      # El esquema lo crea y cambia Flyway (db/migration). Hibernate solo
+      # comprueba que las entidades coinciden con él y no arranca si no.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
+  flyway:
+    # Las bases creadas antes de Flyway (con `ddl-auto: update`) ya tienen las
+    # tablas de V1: se marcan como en la versión 1 y solo se aplica lo nuevo.
+    baseline-on-migrate: true
+    baseline-version: 1
 
   # --- Mongo: bloques de horario (esquema flexible por RF-01…RF-04) ---
   data:
@@ -74,9 +80,18 @@ huecko:
     intervalo-cierre-ms: 60000
     # Margen para que el contexto termine de arrancar antes del primer barrido.
     retardo-inicial-ms: 10000
+  # Servicio de IA (repo huecko-ai-service). Opcional: si no responde dentro
+  # del tiempo máximo, cada función usa su versión sin IA.
+  ia:
+    url: ${HUECKO_IA_URL:http://localhost:8000}
+    # Secreto compartido con el servicio; sin él, el servicio no atiende.
+    token: ${HUECKO_IA_TOKEN:}
+    tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
+    # Sugerencia de la IA en cada votación exprés que se abre.
+    recomendaciones: ${HUECKO_IA_RECOMENDACIONES:false}
   imprevistos:
-    # RF-16: quién decide la criticidad. `reglas` es el MVP. El documento deja
-    # un LLM como mejora de fase 2: cuando exista, aquí se pondrá `ia`.
+    # RF-16: quién decide la criticidad. `reglas` es el MVP; `ia` lee además el
+    # motivo con el servicio de IA (huecko.ia) y cae a reglas si este falla.
     evaluador: ${HUECKO_IMPREVISTOS_EVALUADOR:reglas}
     # RF-17: "plazo corto". Una hora es el ejemplo del documento.
     plazo-minutos: ${HUECKO_IMPREVISTOS_PLAZO_MINUTOS:60}

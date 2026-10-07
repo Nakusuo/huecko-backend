@@ -13,7 +13,7 @@
 
     <groupId>com.huecko</groupId>
     <artifactId>huecko-backend</artifactId>
-    <version>0.4.0</version>
+    <version>0.5.0</version>
     <name>huecko-backend</name>
     <description>API REST de Huecko — coordinación de horarios y planes de grupo</description>
 
@@ -46,6 +46,16 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Migraciones del esquema de Postgres (src/main/resources/db/migration) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
         <!-- Seguridad: BCrypt + cadena de filtros para el JWT propio -->
