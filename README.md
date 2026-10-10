@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://github.com/Nakusuo"><img src="https://raw.githubusercontent.com/Nakusuo/Nakusuo/main/assets/covers/huecko-backend.svg" width="100%" alt="huecko-backend — Nakusu"/></a>
+</p>
+
 # Huecko Backend — Plataforma Inteligente de Coordinación de Horarios y Planes de Grupo
 [![Java Version](https://img.shields.io/badge/Java-17-orange.svg)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green.svg)](https://spring.io/projects/spring-boot)
