@@ -136,6 +136,12 @@ aplican en el siguiente despliegue).
    `HUECKO_CORS_ORIGINS` (con `https://` y sin barra final) y **Save and
    deploy**.
 
+El frontend sale con una **Content-Security-Policy** (`vercel.json`) que solo
+deja hablar con la API en `https://*.onrender.com` y `wss://*.onrender.com`.
+Si algún día la API va en otro dominio, añádelo a `connect-src` ahí. Para
+probar cualquier cambio de cabeceras antes de publicarlo: `npm run build` y
+`npm run preview`, que sirve la build con las mismas cabeceras que Vercel.
+
 ## 6. Tu cuenta de administrador
 
 **El orden importa.** Quien tenga una cuenta con un correo de
@@ -189,4 +195,5 @@ mongodump --uri "mongodb+srv://USUARIO:CLAVE@cluster0.xxxxx.mongodb.net/huecko" 
 | La web entra en **modo demo** | Falta `VITE_API_URL` en Production de Vercel o no se redesplegó después de ponerla. |
 | «Demasiados intentos» al entrar | Límite contra fuerza bruta: 5 fallos por correo o 20 intentos por IP cada 15 min. Espera un poco. |
 | En **Salud**, la IA «no responde» | `HUECKO_IA_URL` no apunta al servicio real, o el token no llegó a `huecko-ia`. Si dice «sin GEMINI_API_KEY», falta la clave. |
+| La consola del navegador dice **Refused to … Content Security Policy** | Algo carga desde un dominio que la CSP de `vercel.json` no permite (otra URL de API, otro CDN). Añádelo a la directiva que indique el mensaje. |
 | Tiempo real no llega | El WebSocket va al mismo dominio de la API; revisa CORS (también lo usa SockJS). |
