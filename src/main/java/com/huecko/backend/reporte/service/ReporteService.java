@@ -1,6 +1,7 @@
 package com.huecko.backend.reporte.service;
 
 import com.huecko.backend.auth.service.UsuarioAutenticado;
+import com.huecko.backend.common.LimitadorDeIntentos;
 import com.huecko.backend.common.exception.BusinessException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.EstadoRevision;
@@ -11,19 +12,18 @@ import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.reporte.dto.ReporteRequests;
 import com.huecko.backend.reporte.dto.ReporteResponse;
+import com.huecko.backend.tiemporeal.AccesoRevocado;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -46,12 +46,17 @@ public class ReporteService {
     private final ReporteUsuarioRepository reportes;
     private final UsuarioRepository usuarios;
     private final RegistroFallos registroFallos;
-    private final Map<UUID, Deque<Instant>> erroresRecientes = new ConcurrentHashMap<>();
+    private final ApplicationEventPublisher eventos;
+    /** Acotado en claves: con el registro abierto, un mapa por usuario crecía sin fin. */
+    private final LimitadorDeIntentos erroresRecientes =
+            new LimitadorDeIntentos(MAX_ERRORES_CLIENTE, VENTANA_ERRORES, 10_000);
 
-    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios, RegistroFallos registroFallos) {
+    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios,
+                          RegistroFallos registroFallos, ApplicationEventPublisher eventos) {
         this.reportes = reportes;
         this.usuarios = usuarios;
         this.registroFallos = registroFallos;
+        this.eventos = eventos;
     }
 
     public void crear(UsuarioAutenticado autor, ReporteRequests.Crear req, String navegador) {
@@ -108,17 +113,7 @@ public class ReporteService {
     }
 
     boolean dentroDelLimite(UUID usuarioId, Instant ahora) {
-        Deque<Instant> marcas = erroresRecientes.computeIfAbsent(usuarioId, id -> new ArrayDeque<>());
-        synchronized (marcas) {
-            while (!marcas.isEmpty() && marcas.peekFirst().isBefore(ahora.minus(VENTANA_ERRORES))) {
-                marcas.pollFirst();
-            }
-            if (marcas.size() >= MAX_ERRORES_CLIENTE) {
-                return false;
-            }
-            marcas.addLast(ahora);
-            return true;
-        }
+        return erroresRecientes.permitir(usuarioId.toString(), ahora);
     }
 
     /* ------------------------------ Admin ------------------------------ */
@@ -168,6 +163,10 @@ public class ReporteService {
         }
         cuenta.setSuspendido(suspendido);
         usuarios.save(cuenta);
+        if (suspendido) {
+            // El tiempo real no pasa por el filtro HTTP: sin esto seguía recibiendo eventos.
+            eventos.publishEvent(new AccesoRevocado(cuenta.getId()));
+        }
 
         if (reporte.getEstado() == EstadoRevision.NUEVO) {
             reporte.setEstado(EstadoRevision.REVISADO);

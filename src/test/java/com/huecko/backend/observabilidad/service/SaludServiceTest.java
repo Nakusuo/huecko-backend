@@ -5,6 +5,7 @@ import com.huecko.backend.observabilidad.dto.SaludResponse;
 import com.huecko.backend.observabilidad.dto.SaludResponse.Estado;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.repository.PlanRepository;
+import com.huecko.backend.ia.VigiaIA;
 import org.bson.Document;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,10 +33,13 @@ class SaludServiceTest {
     private final PlanRepository planes = mock(PlanRepository.class);
     private final RegistroTareas tareas = new RegistroTareas();
 
+    private final VigiaIA vigiaIA = mock(VigiaIA.class);
+
     private SaludService servicio() {
+        when(vigiaIA.ultimo()).thenReturn(new VigiaIA.Comprobacion(VigiaIA.Estado.DESACTIVADA, null, null));
         when(mongo.executeCommand(any(Document.class))).thenReturn(new Document("ok", 1));
         return new SaludService(jdbc, mongo, conectados, tareas, planes, mock(VotacionExpresRepository.class),
-                new MockEnvironment(), "1.0.0");
+                new MockEnvironment(), vigiaIA, "1.0.0");
     }
 
     @Test
@@ -48,8 +52,23 @@ class SaludServiceTest {
 
         assertThat(r.estado()).isEqualTo(Estado.OK);
         assertThat(r.componentes()).extracting(SaludResponse.Componente::clave)
-                .containsExactly("postgres", "mongo", "tiempoReal");
+                .containsExactly("postgres", "mongo", "tiempoReal", "ia");
         assertThat(r.aplicacion().version()).isEqualTo("1.0.0");
+    }
+
+    @Test
+    @DisplayName("la IA sin respuesta degrada el sistema pero no lo tumba: la app sigue con reglas")
+    void iaSinRespuesta() {
+        SaludService s = servicio();
+        when(jdbc.queryForObject("SELECT 1", Integer.class)).thenReturn(1);
+        when(vigiaIA.ultimo()).thenReturn(
+                new VigiaIA.Comprobacion(VigiaIA.Estado.SIN_RESPUESTA, java.time.Instant.now(), null));
+
+        SaludResponse r = s.salud();
+
+        assertThat(r.estado()).isEqualTo(Estado.DEGRADADO);
+        assertThat(r.componentes()).filteredOn(c -> c.clave().equals("ia"))
+                .singleElement().extracting(SaludResponse.Componente::estado).isEqualTo(Estado.DEGRADADO);
     }
 
     @Test

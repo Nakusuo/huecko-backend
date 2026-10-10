@@ -18,6 +18,10 @@ public record ActualizarPerfilRequest(
         @Pattern(regexp = "(?s).*\\S.*", message = "El correo no puede estar vacío")
         @Email(message = "El correo no tiene un formato válido")
         @Size(max = 180, message = "El correo no puede superar los 180 caracteres")
-        String email
+        String email,
+
+        // Solo se exige si cambia el correo (ver PerfilService). No se guarda.
+        @Size(max = 200, message = "La contraseña es demasiado larga")
+        String passwordActual
 ) {
 }

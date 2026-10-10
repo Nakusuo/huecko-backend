@@ -1,6 +1,7 @@
 package com.huecko.backend.observabilidad.service;
 
 import com.huecko.backend.common.ZonaHoraria;
+import com.huecko.backend.ia.VigiaIA;
 import com.huecko.backend.mongo.document.VotacionExpres;
 import com.huecko.backend.mongo.repository.VotacionExpresRepository;
 import com.huecko.backend.observabilidad.dto.SaludResponse;
@@ -46,12 +47,13 @@ public class SaludService {
     private final PlanRepository planRepository;
     private final VotacionExpresRepository votacionRepository;
     private final Environment environment;
+    private final VigiaIA vigiaIA;
     private final String version;
 
     public SaludService(JdbcTemplate jdbcTemplate, MongoTemplate mongoTemplate, SimpUserRegistry usuariosConectados,
                         RegistroTareas registroTareas, PlanRepository planRepository,
                         VotacionExpresRepository votacionRepository, Environment environment,
-                        @Value("${huecko.version:desconocida}") String version) {
+                        VigiaIA vigiaIA, @Value("${huecko.version:desconocida}") String version) {
         this.jdbcTemplate = jdbcTemplate;
         this.mongoTemplate = mongoTemplate;
         this.usuariosConectados = usuariosConectados;
@@ -59,6 +61,7 @@ public class SaludService {
         this.planRepository = planRepository;
         this.votacionRepository = votacionRepository;
         this.environment = environment;
+        this.vigiaIA = vigiaIA;
         this.version = version;
     }
 
@@ -70,7 +73,8 @@ public class SaludService {
                         () -> jdbcTemplate.queryForObject("SELECT 1", Integer.class)),
                 medir("mongo", "MongoDB", "Horarios, retrasos e imprevistos",
                         () -> mongoTemplate.executeCommand(new Document("ping", 1))),
-                tiempoReal());
+                tiempoReal(),
+                ia());
 
         List<TareaEstado> tareas = new ArrayList<>();
         for (Tarea tarea : Tarea.values()) {
@@ -106,6 +110,29 @@ public class SaludService {
         return new Componente("tiempoReal", "Tiempo real (WebSocket)", Estado.OK, null,
                 personas + (personas == 1 ? " persona conectada" : " personas conectadas")
                         + " en " + sesiones + (sesiones == 1 ? " sesión." : " sesiones."));
+    }
+
+    /**
+     * La IA es opcional: si falla, la app sigue con reglas. Por eso nunca sale
+     * como CAÍDA, solo DEGRADADA. No se le pregunta aquí (despertarla puede
+     * tardar un minuto): se lee lo último que vio VigiaIA, que la comprueba
+     * cada 10 minutos.
+     */
+    private Componente ia() {
+        VigiaIA.Comprobacion c = vigiaIA.ultimo();
+        String desde = c.comprobadoEn() == null ? "" : " (comprobado " + c.comprobadoEn() + ")";
+        return switch (c.estado()) {
+            case DESACTIVADA -> new Componente("ia", "Servicio de IA", Estado.OK, null,
+                    "Desactivada: criticidad por reglas y sin sugerencias.");
+            case SIN_COMPROBAR -> new Componente("ia", "Servicio de IA", Estado.OK, null,
+                    "Aún no comprobada: la API acaba de arrancar.");
+            case ACTIVA -> new Componente("ia", "Servicio de IA", Estado.OK, c.latenciaMs(),
+                    "Responde y tiene Gemini" + desde + ".");
+            case SIN_GEMINI -> new Componente("ia", "Servicio de IA", Estado.DEGRADADO, c.latenciaMs(),
+                    "Responde, pero sin GEMINI_API_KEY: todo sale por reglas" + desde + ".");
+            case SIN_RESPUESTA -> new Componente("ia", "Servicio de IA", Estado.DEGRADADO, null,
+                    "No responde: se usan reglas. Revisa HUECKO_IA_URL y HUECKO_IA_TOKEN" + desde + ".");
+        };
     }
 
     private TareaEstado tarea(Tarea tarea, Instant ahora) {

@@ -1,6 +1,7 @@
 package com.huecko.backend.config;
 
 import com.huecko.backend.tiemporeal.SeguridadStompInterceptor;
+import com.huecko.backend.tiemporeal.SesionesTiempoReal;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -8,6 +9,7 @@ import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -32,11 +34,14 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final SeguridadStompInterceptor seguridadStompInterceptor;
+    private final SesionesTiempoReal sesionesTiempoReal;
     private final List<String> allowedOrigins;
 
     public WebSocketConfig(SeguridadStompInterceptor seguridadStompInterceptor,
+                           SesionesTiempoReal sesionesTiempoReal,
                            @Value("${huecko.cors.allowed-origins}") String allowedOrigins) {
         this.seguridadStompInterceptor = seguridadStompInterceptor;
+        this.sesionesTiempoReal = sesionesTiempoReal;
         // Mismo origen permitido que en HTTP: dos listas separadas acabarían
         // divergiendo y el fallo aparecería solo en producción.
         this.allowedOrigins = Arrays.stream(allowedOrigins.split(","))
@@ -64,5 +69,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(seguridadStompInterceptor);
+    }
+
+    /** Lleva la cuenta de las sesiones abiertas para poder cortarlas (SesionesTiempoReal). */
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(sesionesTiempoReal);
     }
 }
