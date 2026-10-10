@@ -51,7 +51,7 @@ public class ConfiguracionVisible {
                 "PostgreSQL: cuentas, grupos y planes."));
         lista.add(new Propiedad("Datos", "spring.data.mongodb.uri", sinCredenciales(env.getProperty("spring.data.mongodb.uri")),
                 "MongoDB: horarios, retrasos, imprevistos, fallos y reportes."));
-        lista.add(valor("Datos", "spring.jpa.hibernate.ddl-auto", "`update` crea columnas solo; `validate` exige migrar a mano."));
+        lista.add(valor("Datos", "spring.jpa.hibernate.ddl-auto", "`validate`: el esquema lo lleva Flyway (db/migration) y Hibernate solo comprueba."));
         lista.add(valor("Datos", "huecko.seed.enabled", "Si se cargan las cuentas y datos de demo al arrancar."));
 
         lista.add(valor("Planes", "huecko.planes.cierre-automatico", "Si corre el cierre automático de votaciones."));
@@ -63,6 +63,14 @@ public class ConfiguracionVisible {
         lista.add(valor("Imprevistos", "huecko.imprevistos.cierre-automatico", "Si corre el cierre automático de votaciones exprés."));
         lista.add(valor("Imprevistos", "huecko.imprevistos.intervalo-cierre-ms", "Cada cuántos milisegundos corre."));
         lista.add(valor("Imprevistos", "huecko.imprevistos.dias-purga", "Días que se conserva una votación cerrada."));
+
+        lista.add(valor("IA", "huecko.ia.url", "Dónde está el servicio de IA."));
+        String tokenIa = env.getProperty("huecko.ia.token");
+        lista.add(new Propiedad("IA", "huecko.ia.token",
+                tokenIa == null || tokenIa.isBlank() ? "(sin definir: la IA no atenderá)" : "Definido (oculto)",
+                "Secreto compartido con el servicio de IA. Nunca se muestra."));
+        lista.add(valor("IA", "huecko.ia.tiempo-maximo-ms", "Lo que se espera a la IA antes de usar reglas."));
+        lista.add(valor("IA", "huecko.ia.recomendaciones", "Si la IA sugiere una opción en cada votación exprés."));
 
         return lista;
     }
