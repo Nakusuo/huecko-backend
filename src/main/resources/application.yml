@@ -52,6 +52,10 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      # /api/actuator/health/liveness: "el proceso está vivo", sin mirar las
+      # bases. Es lo que vigila Render (render.yaml).
+      probes:
+        enabled: true
 
 huecko:
   # La pone Maven al empaquetar (filtrado de recursos del parent de Spring Boot).
