@@ -24,7 +24,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -62,6 +64,7 @@ public class ImprevistoService {
     private final AusenciaRepository ausenciaRepository;
     private final AlertaRetrasoRepository alertaRetrasoRepository;
     private final RecomendadorVotacion recomendador;
+    private final PlatformTransactionManager transacciones;
 
     /** Nadie vota en menos de esto, por cerca que esté el plan. */
     private static final Duration PLAZO_MINIMO = Duration.ofMinutes(5);
@@ -82,39 +85,25 @@ public class ImprevistoService {
      * Reportar (RF-15, RF-16, RF-17, RF-19)
      * ------------------------------------------------------------------ */
 
-    @Transactional(readOnly = true)
+    /** Lo que `reportar` necesita de Postgres, leído y comprobado en una transacción corta. */
+    private record DatosReporte(Plan plan, MiembroGrupo miembro, Usuario usuario) {
+    }
+
+    /*
+     * Sin @Transactional a propósito. La criticidad puede consultar a la IA,
+     * que tarda hasta 4 s (más si está despertando); dentro de una transacción
+     * esa espera retenía una conexión JDBC, y con el pool de 10 unos pocos
+     * reportes a la vez lo agotaban. Las lecturas van en `cargarParaReportar`,
+     * dentro de su propia transacción de solo lectura; lo de después escribe
+     * en Mongo, que nunca participó de ella.
+     */
     public ImprevistoDtos.ResultadoReporte reportar(UUID usuarioId, UUID planId, String motivo) {
-        Plan plan = planConAcceso(usuarioId, planId);
-
-        if (plan.getEstado() != Plan.Estado.CONFIRMADO) {
-            throw new BusinessException(
-                    "Solo se puede reportar un imprevisto en un plan confirmado");
-        }
-        if (plan.yaTermino(Instant.now())) {
-            throw new BusinessException("Este plan ya terminó: no se pueden reportar imprevistos");
-        }
-
-        // Antes de nada: un segundo aviso de la misma persona no es un hecho
-        // nuevo, y cada uno volvía a notificar al grupo entero. Vale para las
-        // dos ramas; tras reagendar, las ausencias viejas se borran y se puede
-        // volver a avisar (ver PlanService.reagendar).
-        if (ausenciaRepository.existsByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString())) {
-            throw new BusinessException("Ya reportaste tu ausencia en este plan");
-        }
-
-        if (votacionRepository.findByPlanIdAndEstado(
-                planId.toString(), VotacionExpres.Estado.ABIERTA).isPresent()) {
-            // Dos votaciones exprés a la vez sobre el mismo plan dejarían al
-            // grupo decidiendo dos cosas incompatibles en paralelo.
-            throw new BusinessException(
-                    "Ya hay una votación exprés abierta para este plan");
-        }
-
-        MiembroGrupo miembro = miembroGrupoRepository
-                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
-                .orElseThrow(() -> new NotFoundException("El plan no existe"));
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
+        TransactionTemplate soloLectura = new TransactionTemplate(transacciones);
+        soloLectura.setReadOnly(true);
+        DatosReporte datos = soloLectura.execute(estado -> cargarParaReportar(usuarioId, planId));
+        Plan plan = datos.plan();
+        MiembroGrupo miembro = datos.miembro();
+        Usuario usuario = datos.usuario();
 
         String motivoLimpio = (motivo == null || motivo.isBlank()) ? null : motivo.trim();
         EvaluadorCriticidad.Veredicto veredicto = evaluador.evaluar(plan, miembro, usuarioId, motivoLimpio);
@@ -176,6 +165,46 @@ public class ImprevistoService {
         return new ImprevistoDtos.ResultadoReporte(
                 veredicto.criticidad(), veredicto.razon(), veredicto.origen().name(),
                 aRespuesta(votacion, usuarioId));
+    }
+
+    /**
+     * Las comprobaciones previas y las lecturas de Postgres. `yaTermino` deja
+     * cargada la ventana confirmada, que se usa después, fuera de la
+     * transacción (calcularExpiracion y la recomendación en segundo plano).
+     */
+    private DatosReporte cargarParaReportar(UUID usuarioId, UUID planId) {
+        Plan plan = planConAcceso(usuarioId, planId);
+
+        if (plan.getEstado() != Plan.Estado.CONFIRMADO) {
+            throw new BusinessException(
+                    "Solo se puede reportar un imprevisto en un plan confirmado");
+        }
+        if (plan.yaTermino(Instant.now())) {
+            throw new BusinessException("Este plan ya terminó: no se pueden reportar imprevistos");
+        }
+
+        // Antes de nada: un segundo aviso de la misma persona no es un hecho
+        // nuevo, y cada uno volvía a notificar al grupo entero. Vale para las
+        // dos ramas; tras reagendar, las ausencias viejas se borran y se puede
+        // volver a avisar (ver PlanService.reagendar).
+        if (ausenciaRepository.existsByPlanIdAndUsuarioId(planId.toString(), usuarioId.toString())) {
+            throw new BusinessException("Ya reportaste tu ausencia en este plan");
+        }
+
+        if (votacionRepository.findByPlanIdAndEstado(
+                planId.toString(), VotacionExpres.Estado.ABIERTA).isPresent()) {
+            // Dos votaciones exprés a la vez sobre el mismo plan dejarían al
+            // grupo decidiendo dos cosas incompatibles en paralelo.
+            throw new BusinessException(
+                    "Ya hay una votación exprés abierta para este plan");
+        }
+
+        MiembroGrupo miembro = miembroGrupoRepository
+                .findByGrupo_IdAndUsuario_Id(plan.getGrupo().getId(), usuarioId)
+                .orElseThrow(() -> new NotFoundException("El plan no existe"));
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NotFoundException("El usuario del token ya no existe"));
+        return new DatosReporte(plan, miembro, usuario);
     }
 
     private Ausencia registrarAusencia(Plan plan, Usuario usuario, String motivo, boolean critica, Instant ahora) {
