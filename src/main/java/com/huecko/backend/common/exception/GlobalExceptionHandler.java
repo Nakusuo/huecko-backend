@@ -62,6 +62,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.FORBIDDEN, "Acceso denegado", ex.getMessage());
     }
 
+    @ExceptionHandler(DemasiadosIntentosException.class)
+    public ResponseEntity<Map<String, Object>> handleDemasiadosIntentos(DemasiadosIntentosException ex) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, "Demasiados intentos", ex.getMessage());
+    }
+
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<Map<String, Object>> handleUnauthorized(UnauthorizedException ex) {
         return build(HttpStatus.UNAUTHORIZED, "No autenticado", ex.getMessage());

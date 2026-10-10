@@ -94,6 +94,20 @@ public class JwtService {
         }
     }
 
+    /**
+     * Cuándo caduca un token ya validado. La usa el tiempo real para cortar
+     * las sesiones WebSocket cuyo token deja de valer (SesionesTiempoReal).
+     */
+    public Optional<Instant> caducidad(String token) {
+        try {
+            Date expiracion = Jwts.parser().verifyWith(key).build()
+                    .parseSignedClaims(token).getPayload().getExpiration();
+            return Optional.ofNullable(expiracion).map(Date::toInstant);
+        } catch (JwtException | IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+    }
+
     /** Los tokens emitidos antes de existir el rol no lo traen: son de cuentas normales. */
     private static RolSistema leerRol(String rol) {
         return RolSistema.ADMIN.name().equals(rol) ? RolSistema.ADMIN : RolSistema.USUARIO;

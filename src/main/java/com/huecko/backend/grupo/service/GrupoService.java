@@ -20,7 +20,9 @@ import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.postgres.repository.VotoVentanaRepository;
+import com.huecko.backend.tiemporeal.AccesoRevocado;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +51,7 @@ public class GrupoService {
     private final PlanRepository planRepository;
     private final VotoVentanaRepository votoVentanaRepository;
     private final VotacionExpresOperaciones votacionExpresOperaciones;
+    private final ApplicationEventPublisher eventos;
 
     /* ------------------------------------------------------------------ *
      * Grupos
@@ -233,6 +236,9 @@ public class GrupoService {
         // Va a Mongo, fuera de la transacción. Se hace al final para que un
         // fallo de las comprobaciones de arriba no le quite el voto a nadie.
         votacionExpresOperaciones.retirarVotosDe(grupoId.toString(), objetivoId.toString());
+
+        // Su suscripción viva al grupo se corta tras el commit (SesionesTiempoReal).
+        eventos.publishEvent(new AccesoRevocado(objetivoId));
     }
 
     private void cancelarPlanesEnVotacion(UUID grupoId) {

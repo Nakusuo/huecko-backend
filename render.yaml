@@ -16,14 +16,22 @@ services:
     region: virginia
     branch: main
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/actuator/health
+    # Liveness y no la salud completa: si Neon o Atlas fallan un momento, la
+    # API sigue viva y Render no la reinicia en bucle.
+    healthCheckPath: /api/actuator/health/liveness
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: prod
-      # 512 MB de RAM en el plan gratuito: GC simple y menos compilación JIT
-      # para que quepa y arranque antes.
+      # 512 MB de RAM en el plan gratuito: GC simple, menos compilación JIT y
+      # metaspace acotado para que quepa y arranque antes. Si se queda sin
+      # memoria, sale y Render la reinicia en vez de quedarse colgada.
+      # Para cambiarlo, edita este archivo y haz push: un cambio a mano en
+      # Environment lo pisa el siguiente sync del Blueprint.
       - key: JAVA_TOOL_OPTIONS
-        value: -XX:MaxRAMPercentage=60 -XX:+UseSerialGC -Xss512k -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=48m
+        value: -XX:MaxRAMPercentage=55 -XX:+UseSerialGC -Xss512k -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=48m -XX:MaxMetaspaceSize=160m -XX:+ExitOnOutOfMemoryError
+      # 200 hilos por defecto, cada uno con su pila: de sobra para una demo.
+      - key: SERVER_TOMCAT_THREADS_MAX
+        value: "40"
       - key: HUECKO_JWT_SECRET
         generateValue: true
       - key: HUECKO_ZONA_HORARIA
@@ -40,8 +48,9 @@ services:
       - key: SPRING_DATA_MONGODB_URI
         sync: false
 
-      # Dominio del frontend en Vercel. Admite comodines para las previews:
-      # https://huecko.vercel.app,https://huecko-*.vercel.app
+      # Dominio exacto del frontend en Vercel, p. ej. https://huecko.vercel.app.
+      # Evita comodines como https://huecko-*.vercel.app: cualquiera puede
+      # crear en Vercel un proyecto que encaje con ese patrón.
       - key: HUECKO_CORS_ORIGINS
         sync: false
       # Déjalo vacío al principio: regístrate en la app con tu correo y
