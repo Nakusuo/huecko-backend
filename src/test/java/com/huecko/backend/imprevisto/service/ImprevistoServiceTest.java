@@ -30,6 +30,8 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.mockito.InOrder;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -50,6 +52,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +82,7 @@ class ImprevistoServiceTest {
     @Mock private AusenciaRepository ausenciaRepository;
     @Mock private AlertaRetrasoRepository alertaRetrasoRepository;
 
+    private final PlatformTransactionManager transacciones = mock(PlatformTransactionManager.class);
     private ImprevistoService servicio;
     private Usuario ana;
     private Usuario bruno;
@@ -85,7 +91,7 @@ class ImprevistoServiceTest {
     void preparar() {
         servicio = new ImprevistoService(votacionRepository, operaciones, planRepository,
                 miembroGrupoRepository, usuarioRepository, new EvaluadorPorReglas(), notificador,
-                ausenciaRepository, alertaRetrasoRepository, recomendador);
+                ausenciaRepository, alertaRetrasoRepository, recomendador, transacciones);
         ReflectionTestUtils.setField(servicio, "plazoMinutos", 60);
         ReflectionTestUtils.setField(servicio, "resultadoPorDefecto", VotacionExpres.Opcion.MANTENER);
         ReflectionTestUtils.setField(servicio, "diasPurga", 7);
@@ -108,6 +114,25 @@ class ImprevistoServiceTest {
     }
 
     /* --- Reportar (RF-15, RF-16, RF-17, RF-19) --- */
+
+    @Test
+    @DisplayName("la criticidad se pide con la transaccion ya cerrada: esperar a la IA con una conexion JDBC tomada agotaba el pool")
+    void evaluaFueraDeLaTransaccion() {
+        EvaluadorCriticidad evaluador = spy(new EvaluadorPorReglas());
+        ImprevistoService conEspia = new ImprevistoService(votacionRepository, operaciones, planRepository,
+                miembroGrupoRepository, usuarioRepository, evaluador, notificador,
+                ausenciaRepository, alertaRetrasoRepository, recomendador, transacciones);
+        ReflectionTestUtils.setField(conEspia, "plazoMinutos", 60);
+        ReflectionTestUtils.setField(conEspia, "resultadoPorDefecto", VotacionExpres.Opcion.MANTENER);
+        plan(Plan.Estado.CONFIRMADO, bruno);
+        soyMiembro(ana, false, MiembroGrupo.Rol.MIEMBRO);
+
+        conEspia.reportar(ana.getId(), PLAN, "Me salió trabajo");
+
+        InOrder orden = inOrder(transacciones, evaluador);
+        orden.verify(transacciones).commit(any());
+        orden.verify(evaluador).evaluar(any(), any(), eq(ana.getId()), eq("Me salió trabajo"));
+    }
 
     @Test
     @DisplayName("RF-17: la ausencia de quien propuso el plan abre votacion expres")
