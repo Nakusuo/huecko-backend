@@ -2,7 +2,9 @@ package com.huecko.backend.tiemporeal;
 
 import com.huecko.backend.auth.service.JwtService;
 import com.huecko.backend.auth.service.UsuarioAutenticado;
+import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
+import com.huecko.backend.postgres.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -41,13 +45,53 @@ class SeguridadStompInterceptorTest {
 
     private JwtService jwtService;
     private MiembroGrupoRepository miembros;
+    private UsuarioRepository usuarios;
+    private SesionesTiempoReal sesiones;
     private SeguridadStompInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
         jwtService = mock(JwtService.class);
         miembros = mock(MiembroGrupoRepository.class);
-        interceptor = new SeguridadStompInterceptor(jwtService, miembros);
+        usuarios = mock(UsuarioRepository.class);
+        sesiones = mock(SesionesTiempoReal.class);
+        interceptor = new SeguridadStompInterceptor(jwtService, miembros, usuarios, sesiones);
+        // Por defecto la cuenta de ANA existe y está activa.
+        when(usuarios.findById(ANA.id())).thenReturn(Optional.of(cuenta(false)));
+    }
+
+    private static Usuario cuenta(boolean suspendida) {
+        return Usuario.builder().id(ANA.id()).nombre("Ana").email(ANA.email())
+                .passwordHash("h").suspendido(suspendida).build();
+    }
+
+    @Test
+    @DisplayName("CONNECT de una cuenta suspendida se rechaza aunque el token siga vigente")
+    void connectSuspendida() {
+        when(jwtService.validar("bueno")).thenReturn(Optional.of(ANA));
+        when(usuarios.findById(ANA.id())).thenReturn(Optional.of(cuenta(true)));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer bueno");
+
+        assertThatThrownBy(() -> interceptor.preSend(mensaje(accessor), null))
+                .isInstanceOf(MessageDeliveryException.class);
+    }
+
+    @Test
+    @DisplayName("CONNECT valido registra la sesion con la caducidad del token para poder cortarla")
+    void connectRegistraSesion() {
+        Instant caduca = Instant.parse("2026-10-10T20:00:00Z");
+        when(jwtService.validar("bueno")).thenReturn(Optional.of(ANA));
+        when(jwtService.caducidad("bueno")).thenReturn(Optional.of(caduca));
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer bueno");
+        accessor.setSessionId("sesion-1");
+
+        interceptor.preSend(mensaje(accessor), null);
+
+        verify(sesiones).asociar("sesion-1", ANA.id(), caduca);
     }
 
     // --- CONNECT ---
