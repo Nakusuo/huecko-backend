@@ -11,6 +11,8 @@ import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.reporte.dto.ReporteRequests;
 import com.huecko.backend.reporte.dto.ReporteResponse;
+import com.huecko.backend.tiemporeal.AccesoRevocado;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,7 +35,8 @@ class ReporteServiceTest {
     private final ReporteUsuarioRepository reportes = mock(ReporteUsuarioRepository.class);
     private final UsuarioRepository usuarios = mock(UsuarioRepository.class);
     private final RegistroFallos fallos = mock(RegistroFallos.class);
-    private final ReporteService servicio = new ReporteService(reportes, usuarios, fallos);
+    private final ApplicationEventPublisher eventos = mock(ApplicationEventPublisher.class);
+    private final ReporteService servicio = new ReporteService(reportes, usuarios, fallos, eventos);
 
     private final UsuarioAutenticado ana = new UsuarioAutenticado(UUID.randomUUID(), "ana@h.com", "Ana");
 
@@ -116,6 +119,8 @@ class ReporteServiceTest {
         assertThat(beto.isSuspendido()).isTrue();
         assertThat(r.cuentaReportadaSuspendida()).isTrue();
         assertThat(r.estado()).isEqualTo(EstadoRevision.REVISADO);
+        // Y se le corta el tiempo real, que no pasa por el filtro HTTP.
+        verify(eventos).publishEvent(new AccesoRevocado(beto.getId()));
     }
 
     @Test

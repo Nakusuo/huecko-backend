@@ -3,6 +3,7 @@ package com.huecko.backend.tiemporeal;
 import com.huecko.backend.auth.service.JwtService;
 import com.huecko.backend.auth.service.UsuarioAutenticado;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
+import com.huecko.backend.postgres.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,8 @@ public class SeguridadStompInterceptor implements ChannelInterceptor {
 
     private final JwtService jwtService;
     private final MiembroGrupoRepository miembroGrupoRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final SesionesTiempoReal sesiones;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -98,8 +101,22 @@ public class SeguridadStompInterceptor implements ChannelInterceptor {
             throw new MessageDeliveryException("Falta la cabecera Authorization en el CONNECT");
         }
 
-        UsuarioAutenticado usuario = jwtService.validar(header.substring(PREFIJO.length()).trim())
+        String token = header.substring(PREFIJO.length()).trim();
+        UsuarioAutenticado usuario = jwtService.validar(token)
                 .orElseThrow(() -> new MessageDeliveryException("Token inválido o caducado"));
+
+        // Igual que el filtro HTTP: una cuenta suspendida o borrada no entra
+        // aunque su token aún no haya caducado.
+        boolean activa = usuarioRepository.findById(usuario.id())
+                .map(cuenta -> !cuenta.isSuspendido())
+                .orElse(false);
+        if (!activa) {
+            throw new MessageDeliveryException("La cuenta no está activa");
+        }
+
+        // Para poder cortar la sesión si caduca el token, o si la sacan de un
+        // grupo o la suspenden mientras está conectada.
+        sesiones.asociar(accessor.getSessionId(), usuario.id(), jwtService.caducidad(token).orElse(null));
 
         // Mismo principal que en HTTP: los dos caminos dejan un
         // UsuarioAutenticado, así nada aguas abajo tiene que distinguirlos.

@@ -18,6 +18,8 @@ import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.postgres.repository.VotoVentanaRepository;
+import com.huecko.backend.tiemporeal.AccesoRevocado;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,13 +59,14 @@ class GrupoServiceTest {
     @Mock private PlanRepository planRepository;
     @Mock private VotoVentanaRepository votoVentanaRepository;
     @Mock private VotacionExpresOperaciones votacionExpresOperaciones;
+    @Mock private ApplicationEventPublisher eventos;
 
     private final CalculadoraDisponibilidad calculadora = new CalculadoraDisponibilidad();
 
     private GrupoService servicio() {
         return new GrupoService(grupoRepository, miembroGrupoRepository, usuarioRepository,
                 bloqueHorarioRepository, calculadora, planRepository, votoVentanaRepository,
-                votacionExpresOperaciones);
+                votacionExpresOperaciones, eventos);
     }
 
     /* ------------------------------------------------------------------ *
@@ -291,6 +294,8 @@ class GrupoServiceTest {
 
         verify(miembroGrupoRepository).delete(jefa);
         verify(grupoRepository).delete(jefa.getGrupo());
+        // Su suscripción al grupo se corta (SesionesTiempoReal).
+        verify(eventos).publishEvent(new AccesoRevocado(anaId));
     }
 
     @Test
