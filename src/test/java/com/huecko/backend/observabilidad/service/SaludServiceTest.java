@@ -72,6 +72,21 @@ class SaludServiceTest {
     }
 
     @Test
+    @DisplayName("un token que no coincide degrada la IA y dice qué variable revisar")
+    void iaConTokenInvalido() {
+        SaludService s = servicio();
+        when(jdbc.queryForObject("SELECT 1", Integer.class)).thenReturn(1);
+        when(vigiaIA.ultimo()).thenReturn(
+                new VigiaIA.Comprobacion(VigiaIA.Estado.TOKEN_INVALIDO, java.time.Instant.now(), 120L));
+
+        SaludResponse.Componente ia = s.salud().componentes().stream()
+                .filter(c -> c.clave().equals("ia")).findFirst().orElseThrow();
+
+        assertThat(ia.estado()).isEqualTo(Estado.DEGRADADO);
+        assertThat(ia.detalle()).contains("HUECKO_IA_TOKEN");
+    }
+
+    @Test
     @DisplayName("Postgres caído: el sistema está caído y no se filtra el mensaje del driver")
     void postgresCaido() {
         SaludService s = servicio();

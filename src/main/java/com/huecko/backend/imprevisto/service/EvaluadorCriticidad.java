@@ -11,8 +11,8 @@ import java.util.UUID;
  *
  * Es una interfaz y no una clase porque el documento lo anticipa: el MVP usa
  * reglas —«sistema de reglas, costo cero»— y deja **un LLM como mejora de fase
- * 2**. Cuando llegue esa fase, se añade otra implementación y se cambia una
- * propiedad; nada del Módulo 5 tiene que enterarse.
+ * 2**. Esa fase ya llegó: {@link EvaluadorPorIA} es la otra implementación y
+ * se elige con una propiedad; nada del Módulo 5 tuvo que enterarse.
  *
  * <h2>Contrato que cualquier implementación debe cumplir</h2>
  *
@@ -44,7 +44,7 @@ public interface EvaluadorCriticidad {
     enum Origen {
         /** Las reglas del MVP. */
         REGLAS,
-        /** Un modelo. Fase 2. */
+        /** El servicio de IA leyó el motivo ({@link EvaluadorPorIA}). */
         IA,
         /**
          * Se intentó con modelo y no se pudo —tiempo agotado, error, respuesta

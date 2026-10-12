@@ -25,7 +25,7 @@ public class ClienteIA {
     public ClienteIA(RestClient.Builder builder,
                      @Value("${huecko.ia.url:http://localhost:8000}") String url,
                      @Value("${huecko.ia.token:}") String token,
-                     @Value("${huecko.ia.tiempo-maximo-ms:3000}") long tiempoMaximoMs) {
+                     @Value("${huecko.ia.tiempo-maximo-ms:3500}") long tiempoMaximoMs) {
         this(builder.requestFactory(conTiempoMaximo(tiempoMaximoMs)), url, token);
     }
 

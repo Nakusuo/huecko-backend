@@ -91,7 +91,7 @@ public class ImprevistoService {
 
     /*
      * Sin @Transactional a propósito. La criticidad puede consultar a la IA,
-     * que tarda hasta 4 s (más si está despertando); dentro de una transacción
+     * que tarda hasta 3,5 s (más si está despertando); dentro de una transacción
      * esa espera retenía una conexión JDBC, y con el pool de 10 unos pocos
      * reportes a la vez lo agotaban. Las lecturas van en `cargarParaReportar`,
      * dentro de su propia transacción de solo lectura; lo de después escribe

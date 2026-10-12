@@ -29,7 +29,7 @@ import java.util.UUID;
  * cuando ambas son ciertas.
  *
  * <p>Es el bean por defecto. Se apaga con
- * {@code huecko.imprevistos.evaluador=ia} cuando exista la otra implementación.
+ * {@code huecko.imprevistos.evaluador=ia}, que activa {@link EvaluadorPorIA}.
  */
 @Component
 @ConditionalOnProperty(name = "huecko.imprevistos.evaluador",
