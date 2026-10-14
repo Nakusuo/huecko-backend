@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.never;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -27,7 +28,7 @@ class VigiaIATest {
     void activa() {
         servidor.expect(requestTo("http://ia/salud"))
                 .andRespond(withSuccess("{\"estado\":\"ok\",\"gemini\":true}", MediaType.APPLICATION_JSON));
-        VigiaIA vigia = new VigiaIA(builder, "http://ia", true);
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", true);
 
         vigia.comprobar();
 
@@ -40,7 +41,7 @@ class VigiaIATest {
     void sinGemini() {
         servidor.expect(requestTo("http://ia/salud"))
                 .andRespond(withSuccess("{\"estado\":\"ok\",\"gemini\":false}", MediaType.APPLICATION_JSON));
-        VigiaIA vigia = new VigiaIA(builder, "http://ia", true);
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", true);
 
         vigia.comprobar();
 
@@ -48,10 +49,36 @@ class VigiaIATest {
     }
 
     @Test
+    @DisplayName("manda el token para saber si coincide con el de la IA")
+    void mandaElToken() {
+        servidor.expect(requestTo("http://ia/salud"))
+                .andExpect(header("X-Huecko-Token", "secreto"))
+                .andRespond(withSuccess("{\"gemini\":true,\"token\":true}", MediaType.APPLICATION_JSON));
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", true);
+
+        vigia.comprobar();
+
+        servidor.verify();
+        assertThat(vigia.ultimo().estado()).isEqualTo(VigiaIA.Estado.ACTIVA);
+    }
+
+    @Test
+    @DisplayName("si la IA dice que el token no coincide, queda TOKEN_INVALIDO aunque tenga Gemini")
+    void tokenInvalido() {
+        servidor.expect(requestTo("http://ia/salud"))
+                .andRespond(withSuccess("{\"gemini\":true,\"token\":false}", MediaType.APPLICATION_JSON));
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", true);
+
+        vigia.comprobar();
+
+        assertThat(vigia.ultimo().estado()).isEqualTo(VigiaIA.Estado.TOKEN_INVALIDO);
+    }
+
+    @Test
     @DisplayName("si no responde, queda SIN_RESPUESTA y no lanza")
     void sinRespuesta() {
         servidor.expect(requestTo("http://ia/salud")).andRespond(withServerError());
-        VigiaIA vigia = new VigiaIA(builder, "http://ia", true);
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", true);
 
         vigia.comprobar();
 
@@ -62,7 +89,7 @@ class VigiaIATest {
     @DisplayName("con la IA desactivada no llama a nadie")
     void desactivada() {
         servidor.expect(never(), requestTo("http://ia/salud"));
-        VigiaIA vigia = new VigiaIA(builder, "http://ia", false);
+        VigiaIA vigia = new VigiaIA(builder, "http://ia", "secreto", false);
 
         vigia.comprobar();
 

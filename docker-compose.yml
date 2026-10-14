@@ -62,8 +62,8 @@ services:
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
-      GEMINI_MODELO: ${GEMINI_MODELO:-gemini-flash-latest}
-      GEMINI_TIEMPO_MAXIMO: ${GEMINI_TIEMPO_MAXIMO:-2.5}
+      GEMINI_MODELO: ${GEMINI_MODELO:-gemini-3.5-flash-lite}
+      GEMINI_TIEMPO_MAXIMO: ${GEMINI_TIEMPO_MAXIMO:-3}
     ports:
       - "127.0.0.1:${HUECKO_IA_PORT:-8000}:8000"
     healthcheck:
@@ -108,7 +108,7 @@ services:
       # Dentro de la red de compose la IA se llama `ia`, no localhost.
       HUECKO_IA_URL: http://ia:8000
       HUECKO_IA_TOKEN: ${HUECKO_IA_TOKEN:-}
-      HUECKO_IA_TIEMPO_MAXIMO_MS: ${HUECKO_IA_TIEMPO_MAXIMO_MS:-3000}
+      HUECKO_IA_TIEMPO_MAXIMO_MS: ${HUECKO_IA_TIEMPO_MAXIMO_MS:-3500}
       HUECKO_IA_RECOMENDACIONES: ${HUECKO_IA_RECOMENDACIONES:-false}
       HUECKO_IMPREVISTOS_EVALUADOR: ${HUECKO_IMPREVISTOS_EVALUADOR:-reglas}
     ports:

@@ -130,6 +130,8 @@ public class SaludService {
                     "Responde y tiene Gemini" + desde + ".");
             case SIN_GEMINI -> new Componente("ia", "Servicio de IA", Estado.DEGRADADO, c.latenciaMs(),
                     "Responde, pero sin GEMINI_API_KEY: todo sale por reglas" + desde + ".");
+            case TOKEN_INVALIDO -> new Componente("ia", "Servicio de IA", Estado.DEGRADADO, c.latenciaMs(),
+                    "Responde, pero HUECKO_IA_TOKEN no coincide con el suyo: todo sale por reglas" + desde + ".");
             case SIN_RESPUESTA -> new Componente("ia", "Servicio de IA", Estado.DEGRADADO, null,
                     "No responde: se usan reglas. Revisa HUECKO_IA_URL y HUECKO_IA_TOKEN" + desde + ".");
         };

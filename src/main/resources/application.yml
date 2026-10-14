@@ -90,7 +90,7 @@ huecko:
     url: ${HUECKO_IA_URL:http://localhost:8000}
     # Secreto compartido con el servicio; sin él, el servicio no atiende.
     token: ${HUECKO_IA_TOKEN:}
-    tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
+    tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3500}
     # Sugerencia de la IA en cada votación exprés que se abre.
     recomendaciones: ${HUECKO_IA_RECOMENDACIONES:false}
   imprevistos:

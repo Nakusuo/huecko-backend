@@ -39,7 +39,7 @@ public class VigiaIA {
     /** Un arranque en frío de la IA en el plan gratuito, con margen. */
     private static final Duration ESPERA_DESPERTAR = Duration.ofSeconds(90);
 
-    public enum Estado { DESACTIVADA, SIN_COMPROBAR, ACTIVA, SIN_GEMINI, SIN_RESPUESTA }
+    public enum Estado { DESACTIVADA, SIN_COMPROBAR, ACTIVA, SIN_GEMINI, TOKEN_INVALIDO, SIN_RESPUESTA }
 
     public record Comprobacion(Estado estado, Instant comprobadoEn, Long latenciaMs) {
     }
@@ -52,15 +52,18 @@ public class VigiaIA {
     @Autowired
     public VigiaIA(RestClient.Builder builder,
                    @Value("${huecko.ia.url:http://localhost:8000}") String url,
+                   @Value("${huecko.ia.token:}") String token,
                    @Value("${huecko.imprevistos.evaluador:reglas}") String evaluador,
                    @Value("${huecko.ia.recomendaciones:false}") boolean recomendaciones) {
-        this(builder.clone().requestFactory(conEsperaLarga()), url,
+        this(builder.clone().requestFactory(conEsperaLarga()), url, token,
                 "ia".equalsIgnoreCase(evaluador) || recomendaciones);
     }
 
     /** Sin tocar la fábrica de peticiones: así las pruebas pueden poner la suya. */
-    VigiaIA(RestClient.Builder builder, String url, boolean enUso) {
-        this.http = builder.baseUrl(url).build();
+    VigiaIA(RestClient.Builder builder, String url, String token, boolean enUso) {
+        // /salud no exige el token, pero con él dice si coincide: un token mal
+        // copiado no se notaba y todo salía por reglas sin avisar.
+        this.http = builder.baseUrl(url).defaultHeader("X-Huecko-Token", token).build();
         this.enUso = enUso;
         this.ultimo = new Comprobacion(enUso ? Estado.SIN_COMPROBAR : Estado.DESACTIVADA, null, null);
     }
@@ -101,7 +104,13 @@ public class VigiaIA {
         Estado estado;
         try {
             Map<?, ?> salud = http.get().uri("/salud").retrieve().body(Map.class);
-            estado = salud != null && Boolean.TRUE.equals(salud.get("gemini")) ? Estado.ACTIVA : Estado.SIN_GEMINI;
+            if (salud == null || !Boolean.TRUE.equals(salud.get("gemini"))) {
+                estado = Estado.SIN_GEMINI;
+            } else if (Boolean.FALSE.equals(salud.get("token"))) {
+                estado = Estado.TOKEN_INVALIDO;
+            } else {
+                estado = Estado.ACTIVA;
+            }
         } catch (RuntimeException ex) {
             log.warn("La IA no responde ({}): las funciones con IA usan reglas.", ex.getClass().getSimpleName());
             estado = Estado.SIN_RESPUESTA;

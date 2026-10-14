@@ -68,7 +68,7 @@ services:
       - key: HUECKO_IA_RECOMENDACIONES
         value: "true"
       - key: HUECKO_IA_TIEMPO_MAXIMO_MS
-        value: "3000"
+        value: "3500"
 
   - type: web
     name: huecko-ia
@@ -90,6 +90,6 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODELO
-        value: gemini-flash-latest
+        value: gemini-3.5-flash-lite
       - key: GEMINI_TIEMPO_MAXIMO
-        value: "2.5"
+        value: "3"
