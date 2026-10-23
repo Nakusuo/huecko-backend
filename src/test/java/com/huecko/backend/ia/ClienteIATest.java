@@ -40,6 +40,24 @@ class ClienteIATest {
     }
 
     @Test
+    void elEscaneoMandaLaFotoEnBase64ConSuTipoYLeeLosBloques() {
+        servidor.expect(requestTo("http://ia/v1/horario/escaneo"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Huecko-Token", "secreto"))
+                .andExpect(jsonPath("$.tipo").value("image/png"))
+                .andExpect(jsonPath("$.imagen").value("AQID"))
+                .andRespond(withSuccess("{\"bloques\":[{\"diaSemana\":1,\"horaInicio\":\"08:00\","
+                        + "\"horaFin\":\"10:00\",\"titulo\":\"Cálculo\",\"dudoso\":false}]}",
+                        MediaType.APPLICATION_JSON));
+
+        var r = cliente.escanearHorario("image/png", new byte[]{1, 2, 3});
+
+        assertThat(r.bloques()).containsExactly(
+                new ClienteIA.BloqueLeido(1, "08:00", "10:00", "Cálculo", false));
+        servidor.verify();
+    }
+
+    @Test
     void unErrorDelServicioSaleComoIaNoDisponible() {
         servidor.expect(requestTo("http://ia/v1/criticidad")).andRespond(withServerError());
 

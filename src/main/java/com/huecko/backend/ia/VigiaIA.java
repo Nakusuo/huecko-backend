@@ -53,9 +53,10 @@ public class VigiaIA {
     public VigiaIA(RestClient.Builder builder,
                    @Value("${huecko.ia.url:http://localhost:8000}") String url,
                    @Value("${huecko.imprevistos.evaluador:reglas}") String evaluador,
-                   @Value("${huecko.ia.recomendaciones:false}") boolean recomendaciones) {
+                   @Value("${huecko.ia.recomendaciones:false}") boolean recomendaciones,
+                   @Value("${huecko.ia.asistente:true}") boolean asistente) {
         this(builder.clone().requestFactory(conEsperaLarga()), url,
-                "ia".equalsIgnoreCase(evaluador) || recomendaciones);
+                "ia".equalsIgnoreCase(evaluador) || recomendaciones || asistente);
     }
 
     /** Sin tocar la fábrica de peticiones: así las pruebas pueden poner la suya. */
