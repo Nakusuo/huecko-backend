@@ -71,6 +71,8 @@ public class ConfiguracionVisible {
                 "Secreto compartido con el servicio de IA. Nunca se muestra."));
         lista.add(valor("IA", "huecko.ia.tiempo-maximo-ms", "Lo que se espera a la IA antes de usar reglas."));
         lista.add(valor("IA", "huecko.ia.recomendaciones", "Si la IA sugiere una opción en cada votación exprés."));
+        lista.add(valor("IA", "huecko.ia.asistente", "Si están encendidas las funciones de IA que pide la persona (escaneo del horario)."));
+        lista.add(valor("IA", "huecko.ia.tiempo-maximo-escaneo-ms", "Lo que se espera a la IA al leer una foto."));
 
         return lista;
     }

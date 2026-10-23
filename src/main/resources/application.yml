@@ -33,6 +33,13 @@ spring:
       uri: mongodb://${MONGO_USER:huecko}:${MONGO_PASSWORD:huecko}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/${MONGO_DB:huecko}?authSource=admin
       auto-index-creation: true
 
+  # Solo se sube la foto del horario para el escaneo con IA (5 MB, como en la
+  # app móvil). Lo que pasa de aquí se corta antes de llegar al controlador.
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
   jackson:
     # Instant/LocalDate/LocalTime como texto ISO, no como número.
     serialization:
@@ -91,8 +98,14 @@ huecko:
     # Secreto compartido con el servicio; sin él, el servicio no atiende.
     token: ${HUECKO_IA_TOKEN:}
     tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
+    # Leer la foto de un horario tarda más: la persona espera con una barra de
+    # progreso, y si no llega, el frontend usa su lector local.
+    tiempo-maximo-escaneo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_ESCANEO_MS:30000}
     # Sugerencia de la IA en cada votación exprés que se abre.
     recomendaciones: ${HUECKO_IA_RECOMENDACIONES:false}
+    # Funciones de IA que la persona pide (escaneo del horario…). Con `false`
+    # responden 503 y el frontend sigue sin IA.
+    asistente: ${HUECKO_IA_ASISTENTE:true}
   imprevistos:
     # RF-16: quién decide la criticidad. `reglas` es el MVP; `ia` lee además el
     # motivo con el servicio de IA (huecko.ia) y cae a reglas si este falla.

@@ -239,8 +239,9 @@ Toda respuesta de error, incluidas las de Spring Security, sale igual:
 ### Servicio de IA (opcional)
 
 El repo `huecko-ai-service` añade IA sin volverla obligatoria: si no responde a
-tiempo, cada función usa su versión sin IA. Hoy cubre RF-16, la criticidad de
-una ausencia leída a partir del motivo.
+tiempo, cada función usa su versión sin IA. Hoy cubre RF-16 (la criticidad de
+una ausencia leída a partir del motivo), la sugerencia en la votación exprés y
+el **escaneo del horario con una foto**, traído de la app móvil.
 
 | Variable | Para qué |
 | --- | --- |
@@ -249,6 +250,16 @@ una ausencia leída a partir del motivo.
 | `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
 | `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
 | `HUECKO_IA_RECOMENDACIONES=true` | Sugerencia de la IA (CANCELAR, REAGENDAR o MANTENER) en cada votación exprés. Llega en segundo plano; si falla, no hay sugerencia. |
+| `HUECKO_IA_ASISTENTE` | Funciones que pide la persona, como el escaneo del horario (por defecto `true`). Con `false` responden 503. |
+| `HUECKO_IA_TIEMPO_MAXIMO_ESCANEO_MS` | Espera máxima al leer una foto (por defecto 30000). |
+
+Rutas que usa el frontend (con sesión; cada persona tiene un cupo de 20 usos
+cada 15 minutos):
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/api/ia/estado` | `{disponible, estado}`: si conviene ofrecer la IA. No gasta cupo. |
+| `POST` | `/api/ia/horario/escaneo` | Multipart con el campo `imagen` (JPG, PNG o WEBP, hasta 5 MB). Devuelve `{bloques: [{diaSemana, horaInicio, horaFin, titulo, dudoso}]}` sin guardar nada. 503 si la IA no responde, 429 sin cupo. |
 
 Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
 reglas; el modelo solo decide el resto, y solo si hay motivo escrito.
