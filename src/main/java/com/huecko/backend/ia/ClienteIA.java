@@ -119,6 +119,27 @@ public class ClienteIA {
         return post(httpAsistente, "/v1/planes/ideas", peticion, RespuestaIdeas.class);
     }
 
+    public record VentanaVotadaIA(String opcion, int votos, int disponibilidad, boolean elegida) {}
+
+    public record AusenciaIA(String quien, boolean critica, String motivo) {}
+
+    public record RetrasoIA(String quien, int minutos) {}
+
+    public record ExpresIA(String quien, int votos, int de) {}
+
+    /** @param estado EN_VOTACION, CONFIRMADO o POR_REPROGRAMAR; @param opciones las recomendaciones que admite */
+    public record PeticionResumen(String titulo, String lugar, String estado, boolean votacionAbierta, String cierre,
+                                  String ahora, int integrantes, int votantes, List<VentanaVotadaIA> ventanas,
+                                  List<AusenciaIA> ausencias, List<RetrasoIA> retrasos, ExpresIA votacionExpres,
+                                  List<String> opciones) {}
+
+    public record RespuestaResumen(String resumen, String recomendacion, String razon) {}
+
+    /** Cómo va la votación de un plan y qué conviene hacer. Que la recomendación sea admisible lo comprueba quien llama. */
+    public RespuestaResumen resumenVotacion(PeticionResumen peticion) {
+        return post(httpAsistente, "/v1/planes/resumen", peticion, RespuestaResumen.class);
+    }
+
     private <T> T post(String ruta, Object cuerpo, Class<T> tipo) {
         return post(http, ruta, cuerpo, tipo);
     }

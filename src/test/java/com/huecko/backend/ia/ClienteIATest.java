@@ -95,6 +95,24 @@ class ClienteIATest {
     }
 
     @Test
+    void elResumenMandaLasOpcionesAdmitidasYLeeLaRecomendacion() {
+        servidor.expect(requestTo("http://ia/v1/planes/resumen"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.opciones[0]").value("CERRAR"))
+                .andExpect(jsonPath("$.votacionExpres").doesNotExist())
+                .andRespond(withSuccess("{\"resumen\":\"Va ganando el sábado.\",\"recomendacion\":\"CERRAR\","
+                        + "\"razon\":\"el sábado tiene todos los votos\"}", MediaType.APPLICATION_JSON));
+
+        var r = cliente.resumenVotacion(new ClienteIA.PeticionResumen("Repaso", null, "EN_VOTACION", true,
+                "sábado 24 de octubre, 07:00", "jueves", 3, 2, java.util.List.of(), java.util.List.of(),
+                java.util.List.of(), null, java.util.List.of("CERRAR", "ESPERAR")));
+
+        assertThat(r).isEqualTo(new ClienteIA.RespuestaResumen("Va ganando el sábado.", "CERRAR",
+                "el sábado tiene todos los votos"));
+        servidor.verify();
+    }
+
+    @Test
     void unErrorDelServicioSaleComoIaNoDisponible() {
         servidor.expect(requestTo("http://ia/v1/criticidad")).andRespond(withServerError());
 

@@ -262,6 +262,7 @@ cada 15 minutos):
 | `POST` | `/api/ia/horario/escaneo` | Multipart con el campo `imagen` (JPG, PNG o WEBP, hasta 5 MB). Devuelve `{bloques: [{diaSemana, horaInicio, horaFin, titulo, dudoso}]}` sin guardar nada. 503 si la IA no responde, 429 sin cupo. |
 | `POST` | `/api/grupos/{id}/ia/borrador-plan` | `{texto}` → `{titulo, categoria, lugar, ventanas[0–3], plazoVotacion}` para rellenar «Proponer plan». La IA elige entre los huecos reales del grupo de los próximos 14 días; el backend comprueba cada opción y deja el plazo una hora antes de la primera. No guarda nada. |
 | `POST` | `/api/grupos/{id}/ia/ideas-plan` | Sin cuerpo → `{ideas: [{titulo, categoria, lugar, ventana, razon}]}`: 3 planes para los huecos libres del grupo, sin repetir sus 5 planes más recientes. Cada `ventana` son las dos primeras horas de un hueco real, o `null`. |
+| `POST` | `/api/planes/{id}/ia/resumen` | Sin cuerpo → `{resumen, recomendacion, razon}`: cómo va la votación (votos, opción que gana, ausencias, retrasos) y qué conviene hacer. La recomendación solo puede ser una que el estado del plan admite (CERRAR/ESPERAR al votar, MANTENER/REPROGRAMAR confirmado); si no, llega `null`. Cualquier miembro; no cambia nada. Un plan cancelado da 400. |
 
 Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
 reglas; el modelo solo decide el resto, y solo si hay motivo escrito.
