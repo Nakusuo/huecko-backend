@@ -150,6 +150,10 @@ Queda escuchando en `http://localhost:8080`. Comprobación rápida:
 curl http://localhost:8080/api/actuator/health
 ```
 
+La lista completa de endpoints, para probarlos desde el navegador, está en
+**Swagger UI**: `http://localhost:8080/api/docs`. Inicia sesión con
+`POST /api/auth/login`, copia el `token` y pégalo en **Authorize**.
+
 #### Esquema de Postgres (Flyway)
 
 Al arrancar, Flyway aplica las migraciones de `src/main/resources/db/migration`
@@ -237,6 +241,7 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `POST` | `/api/grupos/unirse` (`{codigo}`) | JWT |
 | `POST` `DELETE` | `/api/grupos/{grupoId}/codigo` (generar otro / desactivar; solo quien organiza) | JWT |
 | `GET` | `/api/actuator/health` | pública |
+| `GET` | `/api/docs` (Swagger UI) y `/api/docs/openapi.json` | pública |
 
 **Código de invitación.** Cada grupo nace con uno de 8 caracteres (sin O, 0,
 I ni 1). Solo lo ve quien organiza, que puede generar otro (el anterior deja

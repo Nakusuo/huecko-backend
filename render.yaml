@@ -97,6 +97,9 @@ services:
         value: gemini-flash-lite-latest
       - key: GEMINI_TIEMPO_MAXIMO
         value: "2.5"
+      # Swagger de la IA en /docs. Los endpoints siguen pidiendo HUECKO_IA_TOKEN.
+      - key: HUECKO_IA_DOCS
+        value: "true"
 
   # La web (huecko-frontend) como sitio estático: no se duerme. Las cabeceras
   # son las de vercel.json; si cambias la CSP allí, cámbiala también aquí.
