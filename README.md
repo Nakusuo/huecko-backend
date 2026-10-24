@@ -250,8 +250,8 @@ el **escaneo del horario con una foto**, traído de la app móvil.
 | `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
 | `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
 | `HUECKO_IA_RECOMENDACIONES=true` | Sugerencia de la IA (CANCELAR, REAGENDAR o MANTENER) en cada votación exprés. Llega en segundo plano; si falla, no hay sugerencia. |
-| `HUECKO_IA_ASISTENTE` | Funciones que pide la persona, como el escaneo del horario (por defecto `true`). Con `false` responden 503. |
-| `HUECKO_IA_TIEMPO_MAXIMO_ESCANEO_MS` | Espera máxima al leer una foto (por defecto 30000). |
+| `HUECKO_IA_ASISTENTE` | Funciones que pide la persona, como el escaneo del horario o el borrador de plan (por defecto `true`). Con `false` responden 503. |
+| `HUECKO_IA_TIEMPO_MAXIMO_ASISTENTE_MS` | Espera máxima en esas funciones (por defecto 30000). |
 
 Rutas que usa el frontend (con sesión; cada persona tiene un cupo de 20 usos
 cada 15 minutos):
@@ -260,6 +260,7 @@ cada 15 minutos):
 | --- | --- | --- |
 | `GET` | `/api/ia/estado` | `{disponible, estado}`: si conviene ofrecer la IA. No gasta cupo. |
 | `POST` | `/api/ia/horario/escaneo` | Multipart con el campo `imagen` (JPG, PNG o WEBP, hasta 5 MB). Devuelve `{bloques: [{diaSemana, horaInicio, horaFin, titulo, dudoso}]}` sin guardar nada. 503 si la IA no responde, 429 sin cupo. |
+| `POST` | `/api/grupos/{id}/ia/borrador-plan` | `{texto}` → `{titulo, categoria, lugar, ventanas[0–3], plazoVotacion}` para rellenar «Proponer plan». La IA elige entre los huecos reales del grupo de los próximos 14 días; el backend comprueba cada opción y deja el plazo una hora antes de la primera. No guarda nada. |
 
 Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
 reglas; el modelo solo decide el resto, y solo si hay motivo escrito.

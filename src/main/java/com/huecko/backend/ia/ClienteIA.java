@@ -18,24 +18,25 @@ import java.util.List;
  * —red, 5xx, respuesta ilegible— sale como {@link IaNoDisponibleException}, una
  * sola excepción que capturar.
  *
- * <p>Leer una foto no cabe en esos 3 s, así que el escaneo del horario va por
- * un segundo cliente con su propia espera: ahí la persona está mirando una
- * barra de progreso, no esperando a que se cierre una votación.
+ * <p>Leer una foto o redactar un plan no cabe en esos 3 s, así que lo que pide
+ * la persona (el «asistente») va por un segundo cliente con su propia espera:
+ * ahí alguien está mirando un «Pensando…», no esperando a que se cierre una
+ * votación.
  */
 @Component
 public class ClienteIA {
 
     private final RestClient http;
-    private final RestClient httpEscaneo;
+    private final RestClient httpAsistente;
 
     @Autowired
     public ClienteIA(RestClient.Builder builder,
                      @Value("${huecko.ia.url:http://localhost:8000}") String url,
                      @Value("${huecko.ia.token:}") String token,
                      @Value("${huecko.ia.tiempo-maximo-ms:3000}") long tiempoMaximoMs,
-                     @Value("${huecko.ia.tiempo-maximo-escaneo-ms:30000}") long tiempoMaximoEscaneoMs) {
+                     @Value("${huecko.ia.tiempo-maximo-asistente-ms:30000}") long tiempoMaximoAsistenteMs) {
         this(builder.clone().requestFactory(conTiempoMaximo(tiempoMaximoMs)),
-                builder.clone().requestFactory(conTiempoMaximo(tiempoMaximoEscaneoMs)), url, token);
+                builder.clone().requestFactory(conTiempoMaximo(tiempoMaximoAsistenteMs)), url, token);
     }
 
     /** Sin tocar la fábrica de peticiones: así las pruebas pueden poner la suya. */
@@ -43,9 +44,9 @@ public class ClienteIA {
         this(builder, builder, url, token);
     }
 
-    private ClienteIA(RestClient.Builder normal, RestClient.Builder escaneo, String url, String token) {
+    private ClienteIA(RestClient.Builder normal, RestClient.Builder asistente, String url, String token) {
         this.http = normal.baseUrl(url).defaultHeader("X-Huecko-Token", token).build();
-        this.httpEscaneo = escaneo.baseUrl(url).defaultHeader("X-Huecko-Token", token).build();
+        this.httpAsistente = asistente.baseUrl(url).defaultHeader("X-Huecko-Token", token).build();
     }
 
     private static SimpleClientHttpRequestFactory conTiempoMaximo(long ms) {
@@ -87,7 +88,23 @@ public class ClienteIA {
      */
     public RespuestaEscaneo escanearHorario(String tipo, byte[] imagen) {
         PeticionEscaneo peticion = new PeticionEscaneo(tipo, Base64.getEncoder().encodeToString(imagen));
-        return post(httpEscaneo, "/v1/horario/escaneo", peticion, RespuestaEscaneo.class);
+        return post(httpAsistente, "/v1/horario/escaneo", peticion, RespuestaEscaneo.class);
+    }
+
+    /** Un hueco del grupo, numerado para que el modelo lo elija por número y nunca invente una hora. */
+    public record HuecoIA(int numero, String fecha, String dia, String horaInicio, String horaFin,
+                          int porcentaje, int libres, int total) {}
+
+    public record PeticionBorrador(String texto, String grupo, int integrantes, String ahora, List<HuecoIA> huecos) {}
+
+    public record OpcionIA(Integer numero, String horaInicio, String horaFin) {}
+
+    public record RespuestaBorrador(String titulo, String categoria, String lugar, List<OpcionIA> opciones,
+                                    Integer horasPlazo) {}
+
+    /** Borrador de plan a partir de lo que escribió la persona. Lo que devuelve aún hay que validarlo. */
+    public RespuestaBorrador borradorPlan(PeticionBorrador peticion) {
+        return post(httpAsistente, "/v1/planes/borrador", peticion, RespuestaBorrador.class);
     }
 
     private <T> T post(String ruta, Object cuerpo, Class<T> tipo) {
