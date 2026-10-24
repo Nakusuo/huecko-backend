@@ -7,6 +7,7 @@ import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.ia.dto.BorradorPlanResponse;
+import com.huecko.backend.mongo.document.LlamadaIA;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,20 +56,22 @@ public class BorradorPlanService {
     private final HuecosDelGrupo huecosDelGrupo;
     private final ClienteIA clienteIA;
     private final AccesoAsistente acceso;
+    private final RegistroUsoIA registro;
     private final Clock reloj;
 
     @Autowired
     public BorradorPlanService(GrupoService grupoService, HuecosDelGrupo huecosDelGrupo,
-                               ClienteIA clienteIA, AccesoAsistente acceso) {
-        this(grupoService, huecosDelGrupo, clienteIA, acceso, Clock.systemUTC());
+                               ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro) {
+        this(grupoService, huecosDelGrupo, clienteIA, acceso, registro, Clock.systemUTC());
     }
 
     BorradorPlanService(GrupoService grupoService, HuecosDelGrupo huecosDelGrupo,
-                        ClienteIA clienteIA, AccesoAsistente acceso, Clock reloj) {
+                        ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro, Clock reloj) {
         this.grupoService = grupoService;
         this.huecosDelGrupo = huecosDelGrupo;
         this.clienteIA = clienteIA;
         this.acceso = acceso;
+        this.registro = registro;
         this.reloj = reloj;
     }
 
@@ -78,13 +81,15 @@ public class BorradorPlanService {
         GrupoResponse grupo = grupoService.detalle(usuarioId, grupoId);
         List<HuecosDelGrupo.Hueco> huecos = huecosDelGrupo.calcular(usuarioId, grupoId, ahora);
 
+        ClienteIA.PeticionBorrador peticion = new ClienteIA.PeticionBorrador(
+                texto.trim(), grupo.nombre(), grupo.miembros().size(),
+                HuecosDelGrupo.ahoraLegible(ahora),
+                huecos.stream().map(HuecosDelGrupo::paraIA).toList());
+
         acceso.exigir(usuarioId);
         ClienteIA.RespuestaBorrador respuesta;
         try {
-            respuesta = clienteIA.borradorPlan(new ClienteIA.PeticionBorrador(
-                    texto.trim(), grupo.nombre(), grupo.miembros().size(),
-                    HuecosDelGrupo.ahoraLegible(ahora),
-                    huecos.stream().map(HuecosDelGrupo::paraIA).toList()));
+            respuesta = registro.medir(LlamadaIA.Funcion.BORRADOR_PLAN, () -> clienteIA.borradorPlan(peticion));
         } catch (IaNoDisponibleException ex) {
             log.warn("Borrador de plan sin IA en el grupo {}: {}", grupoId, ex.getMessage());
             throw new ServicioNoDisponibleException(AccesoAsistente.NO_DISPONIBLE);

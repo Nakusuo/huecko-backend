@@ -8,6 +8,7 @@ import com.huecko.backend.grupo.dto.MiembroResponse;
 import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
+import com.huecko.backend.mongo.repository.LlamadaIARepository;
 import com.huecko.backend.ia.dto.BorradorPlanResponse;
 import com.huecko.backend.ia.dto.IdeasPlanResponse;
 import com.huecko.backend.plan.dto.PlanResponse;
@@ -60,10 +61,12 @@ class IdeasPlanServiceTest {
     private ClienteIA clienteIA;
     @Mock
     private AccesoAsistente acceso;
+    @Mock
+    private LlamadaIARepository llamadas;
 
     private IdeasPlanService service() {
         return new IdeasPlanService(grupoService, planService, huecosDelGrupo, clienteIA, acceso,
-                Clock.fixed(AHORA, ZoneOffset.UTC));
+                new RegistroUsoIA(llamadas), Clock.fixed(AHORA, ZoneOffset.UTC));
     }
 
     private static PlanResponse plan(String titulo, int diasAtras) {

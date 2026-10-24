@@ -6,6 +6,7 @@ import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.ia.dto.IdeasPlanResponse;
+import com.huecko.backend.mongo.document.LlamadaIA;
 import com.huecko.backend.plan.dto.PlanResponse;
 import com.huecko.backend.plan.service.PlanService;
 import org.slf4j.Logger;
@@ -46,21 +47,23 @@ public class IdeasPlanService {
     private final HuecosDelGrupo huecosDelGrupo;
     private final ClienteIA clienteIA;
     private final AccesoAsistente acceso;
+    private final RegistroUsoIA registro;
     private final Clock reloj;
 
     @Autowired
     public IdeasPlanService(GrupoService grupoService, PlanService planService, HuecosDelGrupo huecosDelGrupo,
-                            ClienteIA clienteIA, AccesoAsistente acceso) {
-        this(grupoService, planService, huecosDelGrupo, clienteIA, acceso, Clock.systemUTC());
+                            ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro) {
+        this(grupoService, planService, huecosDelGrupo, clienteIA, acceso, registro, Clock.systemUTC());
     }
 
     IdeasPlanService(GrupoService grupoService, PlanService planService, HuecosDelGrupo huecosDelGrupo,
-                     ClienteIA clienteIA, AccesoAsistente acceso, Clock reloj) {
+                     ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro, Clock reloj) {
         this.grupoService = grupoService;
         this.planService = planService;
         this.huecosDelGrupo = huecosDelGrupo;
         this.clienteIA = clienteIA;
         this.acceso = acceso;
+        this.registro = registro;
         this.reloj = reloj;
     }
 
@@ -74,13 +77,15 @@ public class IdeasPlanService {
                 .toList();
         List<HuecosDelGrupo.Hueco> huecos = huecosDelGrupo.calcular(usuarioId, grupoId, ahora);
 
+        ClienteIA.PeticionIdeas peticion = new ClienteIA.PeticionIdeas(
+                grupo.nombre(), grupo.descripcion() == null ? "" : grupo.descripcion(),
+                grupo.miembros().size(), HuecosDelGrupo.ahoraLegible(ahora), recientes,
+                huecos.stream().map(HuecosDelGrupo::paraIA).toList());
+
         acceso.exigir(usuarioId);
         ClienteIA.RespuestaIdeas respuesta;
         try {
-            respuesta = clienteIA.ideasPlan(new ClienteIA.PeticionIdeas(
-                    grupo.nombre(), grupo.descripcion() == null ? "" : grupo.descripcion(),
-                    grupo.miembros().size(), HuecosDelGrupo.ahoraLegible(ahora), recientes,
-                    huecos.stream().map(HuecosDelGrupo::paraIA).toList()));
+            respuesta = registro.medir(LlamadaIA.Funcion.IDEAS_PLAN, () -> clienteIA.ideasPlan(peticion));
         } catch (IaNoDisponibleException ex) {
             log.warn("Ideas de plan sin IA en el grupo {}: {}", grupoId, ex.getMessage());
             throw new ServicioNoDisponibleException(AccesoAsistente.NO_DISPONIBLE);

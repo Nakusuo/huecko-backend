@@ -5,6 +5,7 @@ import com.huecko.backend.common.exception.ServicioNoDisponibleException;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.ia.dto.EscaneoHorarioResponse;
+import com.huecko.backend.mongo.document.LlamadaIA;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,10 +38,12 @@ public class EscaneoHorarioService {
 
     private final ClienteIA clienteIA;
     private final AccesoAsistente acceso;
+    private final RegistroUsoIA registro;
 
-    public EscaneoHorarioService(ClienteIA clienteIA, AccesoAsistente acceso) {
+    public EscaneoHorarioService(ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro) {
         this.clienteIA = clienteIA;
         this.acceso = acceso;
+        this.registro = registro;
     }
 
     public EscaneoHorarioResponse escanear(UUID usuarioId, MultipartFile archivo) {
@@ -54,7 +57,7 @@ public class EscaneoHorarioService {
         acceso.exigir(usuarioId);
         ClienteIA.RespuestaEscaneo leido;
         try {
-            leido = clienteIA.escanearHorario(tipo, imagen);
+            leido = registro.medir(LlamadaIA.Funcion.ESCANEO_HORARIO, () -> clienteIA.escanearHorario(tipo, imagen));
         } catch (IaNoDisponibleException ex) {
             log.warn("Escaneo de horario sin IA: {}", ex.getMessage());
             throw new ServicioNoDisponibleException(AccesoAsistente.NO_DISPONIBLE);

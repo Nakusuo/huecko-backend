@@ -8,6 +8,7 @@ import com.huecko.backend.grupo.dto.MiembroResponse;
 import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
+import com.huecko.backend.mongo.repository.LlamadaIARepository;
 import com.huecko.backend.ia.dto.ResumenVotacionResponse;
 import com.huecko.backend.imprevisto.dto.ImprevistoDtos;
 import com.huecko.backend.imprevisto.service.ImprevistoService;
@@ -69,10 +70,12 @@ class ResumenVotacionServiceTest {
     private ClienteIA clienteIA;
     @Mock
     private AccesoAsistente acceso;
+    @Mock
+    private LlamadaIARepository llamadas;
 
     private ResumenVotacionService service() {
         return new ResumenVotacionService(planService, grupoService, imprevistoService, retrasoService,
-                clienteIA, acceso, Clock.fixed(AHORA, ZoneOffset.UTC));
+                clienteIA, acceso, new RegistroUsoIA(llamadas), Clock.fixed(AHORA, ZoneOffset.UTC));
     }
 
     private static PlanResponse plan(Plan.Estado estado, boolean abierta, UUID confirmada) {

@@ -9,6 +9,7 @@ import com.huecko.backend.grupo.dto.MiembroResponse;
 import com.huecko.backend.grupo.service.GrupoService;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
+import com.huecko.backend.mongo.repository.LlamadaIARepository;
 import com.huecko.backend.ia.dto.BorradorPlanResponse;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import org.junit.jupiter.api.DisplayName;
@@ -58,10 +59,12 @@ class BorradorPlanServiceTest {
     private ClienteIA clienteIA;
     @Mock
     private AccesoAsistente acceso;
+    @Mock
+    private LlamadaIARepository llamadas;
 
     private BorradorPlanService service() {
         return new BorradorPlanService(grupoService, huecosDelGrupo, clienteIA, acceso,
-                Clock.fixed(AHORA, ZoneOffset.UTC));
+                new RegistroUsoIA(llamadas), Clock.fixed(AHORA, ZoneOffset.UTC));
     }
 
     private static Instant instante(LocalDate fecha, int hora, int minuto) {

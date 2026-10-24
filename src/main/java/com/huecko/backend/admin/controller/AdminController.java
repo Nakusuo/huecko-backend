@@ -3,6 +3,8 @@ package com.huecko.backend.admin.controller;
 import ch.qos.logback.classic.Level;
 import com.huecko.backend.admin.dto.ResumenAdminResponse;
 import com.huecko.backend.admin.service.AdminService;
+import com.huecko.backend.ia.dto.UsoIAResponse;
+import com.huecko.backend.ia.service.EstadisticasUsoIA;
 import com.huecko.backend.mongo.document.EstadoRevision;
 import com.huecko.backend.mongo.repository.FalloRegistradoRepository;
 import com.huecko.backend.mongo.repository.ReporteUsuarioRepository;
@@ -44,6 +46,7 @@ public class AdminController {
     private final BufferLogs bufferLogs;
     private final ConfiguracionVisible configuracion;
     private final FalloRegistradoRepository fallos;
+    private final EstadisticasUsoIA usoIA;
     private final ReporteUsuarioRepository reportes;
 
     /** Lo pendiente de mirar, para los contadores de la barra del panel. */
@@ -59,6 +62,12 @@ public class AdminController {
     public ResponseEntity<Pendientes> pendientes() {
         return ResponseEntity.ok(new Pendientes(
                 fallos.countByEstado(EstadoRevision.NUEVO), reportes.countByEstado(EstadoRevision.NUEVO)));
+    }
+
+    /** Cuánto se usa Huecko IA en el último mes, por función. Sin datos de nadie. */
+    @GetMapping("/ia")
+    public ResponseEntity<UsoIAResponse> usoIA() {
+        return ResponseEntity.ok(usoIA.calcular());
     }
 
     @GetMapping("/salud")
