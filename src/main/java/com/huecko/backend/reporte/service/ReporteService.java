@@ -8,7 +8,9 @@ import com.huecko.backend.mongo.document.EstadoRevision;
 import com.huecko.backend.mongo.document.ReporteUsuario;
 import com.huecko.backend.mongo.repository.ReporteUsuarioRepository;
 import com.huecko.backend.observabilidad.service.RegistroFallos;
+import com.huecko.backend.postgres.entity.FotoPerfil;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.repository.FotoPerfilRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.reporte.dto.ReporteRequests;
 import com.huecko.backend.reporte.dto.ReporteResponse;
@@ -45,16 +47,18 @@ public class ReporteService {
 
     private final ReporteUsuarioRepository reportes;
     private final UsuarioRepository usuarios;
+    private final FotoPerfilRepository fotos;
     private final RegistroFallos registroFallos;
     private final ApplicationEventPublisher eventos;
     /** Acotado en claves: con el registro abierto, un mapa por usuario crecía sin fin. */
     private final LimitadorDeIntentos erroresRecientes =
             new LimitadorDeIntentos(MAX_ERRORES_CLIENTE, VENTANA_ERRORES, 10_000);
 
-    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios,
+    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios, FotoPerfilRepository fotos,
                           RegistroFallos registroFallos, ApplicationEventPublisher eventos) {
         this.reportes = reportes;
         this.usuarios = usuarios;
+        this.fotos = fotos;
         this.registroFallos = registroFallos;
         this.eventos = eventos;
     }
@@ -153,11 +157,7 @@ public class ReporteService {
     @Transactional
     public ReporteResponse cambiarSuspension(String id, boolean suspendido) {
         ReporteUsuario reporte = buscar(id);
-        if (reporte.getTipo() != ReporteUsuario.Tipo.CONDUCTA || reporte.getCuentaReportadaId() == null) {
-            throw new BusinessException("Este reporte no señala a ninguna cuenta.");
-        }
-        Usuario cuenta = usuarios.findById(UUID.fromString(reporte.getCuentaReportadaId()))
-                .orElseThrow(() -> new NotFoundException("La cuenta reportada ya no existe."));
+        Usuario cuenta = cuentaSenalada(reporte);
         if (cuenta.getRolSistema() == Usuario.RolSistema.ADMIN) {
             throw new BusinessException("No se puede suspender a un administrador.");
         }
@@ -167,13 +167,46 @@ public class ReporteService {
             // El tiempo real no pasa por el filtro HTTP: sin esto seguía recibiendo eventos.
             eventos.publishEvent(new AccesoRevocado(cuenta.getId()));
         }
+        return revisado(reporte, cuenta);
+    }
 
+    /**
+     * La foto de la cuenta que señala un reporte de CONDUCTA, para que la
+     * administración pueda juzgarla. Es la única forma de que vea una foto:
+     * no pertenece a ningún grupo.
+     */
+    @Transactional(readOnly = true)
+    public FotoPerfil fotoReportada(String id) {
+        Usuario cuenta = cuentaSenalada(buscar(id));
+        return fotos.findById(cuenta.getId()).orElseThrow(() -> new NotFoundException("Esa cuenta no tiene foto."));
+    }
+
+    /** Quita la foto de la cuenta reportada. Como suspender, cuenta como revisar el reporte. */
+    @Transactional
+    public ReporteResponse quitarFoto(String id) {
+        ReporteUsuario reporte = buscar(id);
+        Usuario cuenta = cuentaSenalada(reporte);
+        fotos.deleteById(cuenta.getId());
+        cuenta.setFotoActualizadaEn(null);
+        usuarios.save(cuenta);
+        return revisado(reporte, cuenta);
+    }
+
+    private ReporteResponse revisado(ReporteUsuario reporte, Usuario cuenta) {
         if (reporte.getEstado() == EstadoRevision.NUEVO) {
             reporte.setEstado(EstadoRevision.REVISADO);
         }
         reporte.setActualizadoEn(Instant.now());
         reportes.save(reporte);
-        return ReporteResponse.from(reporte, cuenta.isSuspendido());
+        return ReporteResponse.from(reporte, cuenta);
+    }
+
+    private Usuario cuentaSenalada(ReporteUsuario reporte) {
+        if (reporte.getTipo() != ReporteUsuario.Tipo.CONDUCTA || reporte.getCuentaReportadaId() == null) {
+            throw new BusinessException("Este reporte no señala a ninguna cuenta.");
+        }
+        return usuarios.findById(UUID.fromString(reporte.getCuentaReportadaId()))
+                .orElseThrow(() -> new NotFoundException("La cuenta reportada ya no existe."));
     }
 
     private ReporteUsuario buscar(String id) {
@@ -191,6 +224,6 @@ public class ReporteService {
 
     private static ReporteResponse respuesta(ReporteUsuario r, Map<String, Usuario> cuentas) {
         Usuario cuenta = r.getCuentaReportadaId() == null ? null : cuentas.get(r.getCuentaReportadaId());
-        return ReporteResponse.from(r, cuenta == null ? null : cuenta.isSuspendido());
+        return ReporteResponse.from(r, cuenta);
     }
 }

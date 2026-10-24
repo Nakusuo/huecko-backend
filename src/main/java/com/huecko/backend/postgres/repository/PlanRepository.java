@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,4 +44,11 @@ public interface PlanRepository extends JpaRepository<Plan, UUID> {
 
     /** RF-10: los que ya vencieron y siguen abiertos. Es lo que barre el cierre automatico. */
     List<Plan> findByEstadoAndPlazoVotacionLessThanEqual(Plan.Estado estado, Instant limite);
+
+    /** Planes confirmados de varios grupos con su fecha ya cargada, para los logros del perfil. */
+    @Query("select p from Plan p join fetch p.ventanaConfirmada join fetch p.grupo "
+            + "where p.grupo.id in :grupoIds and p.estado = com.huecko.backend.postgres.entity.Plan.Estado.CONFIRMADO")
+    List<Plan> findConfirmadosConFecha(Collection<UUID> grupoIds);
+
+    long countByCreadoPor_IdAndEstadoNot(UUID usuarioId, Plan.Estado estado);
 }

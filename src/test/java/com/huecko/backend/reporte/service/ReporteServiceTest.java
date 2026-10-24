@@ -8,6 +8,7 @@ import com.huecko.backend.mongo.document.ReporteUsuario;
 import com.huecko.backend.mongo.repository.ReporteUsuarioRepository;
 import com.huecko.backend.observabilidad.service.RegistroFallos;
 import com.huecko.backend.postgres.entity.Usuario;
+import com.huecko.backend.postgres.repository.FotoPerfilRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.reporte.dto.ReporteRequests;
 import com.huecko.backend.reporte.dto.ReporteResponse;
@@ -34,9 +35,10 @@ class ReporteServiceTest {
 
     private final ReporteUsuarioRepository reportes = mock(ReporteUsuarioRepository.class);
     private final UsuarioRepository usuarios = mock(UsuarioRepository.class);
+    private final FotoPerfilRepository fotos = mock(FotoPerfilRepository.class);
     private final RegistroFallos fallos = mock(RegistroFallos.class);
     private final ApplicationEventPublisher eventos = mock(ApplicationEventPublisher.class);
-    private final ReporteService servicio = new ReporteService(reportes, usuarios, fallos, eventos);
+    private final ReporteService servicio = new ReporteService(reportes, usuarios, fotos, fallos, eventos);
 
     private final UsuarioAutenticado ana = new UsuarioAutenticado(UUID.randomUUID(), "ana@h.com", "Ana");
 
@@ -132,5 +134,35 @@ class ReporteServiceTest {
 
         assertThatThrownBy(() -> servicio.cambiarSuspension("r2", true)).isInstanceOf(BusinessException.class);
         verify(usuarios, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("desde un reporte de conducta se quita la foto de la cuenta señalada")
+    void quitarFoto() {
+        Usuario beto = cuenta("beto@h.com", Usuario.RolSistema.USUARIO);
+        beto.setFotoActualizadaEn(Instant.now());
+        ReporteUsuario reporte = ReporteUsuario.builder().id("r3").tipo(ReporteUsuario.Tipo.CONDUCTA)
+                .cuentaReportadaId(beto.getId().toString()).estado(EstadoRevision.NUEVO).creadoEn(Instant.now()).build();
+        when(reportes.findById("r3")).thenReturn(Optional.of(reporte));
+        when(usuarios.findById(beto.getId())).thenReturn(Optional.of(beto));
+
+        ReporteResponse r = servicio.quitarFoto("r3");
+
+        verify(fotos).deleteById(beto.getId());
+        assertThat(beto.getFotoActualizadaEn()).isNull();
+        assertThat(r.cuentaReportadaConFoto()).isFalse();
+        assertThat(r.estado()).isEqualTo(EstadoRevision.REVISADO);
+    }
+
+    @Test
+    @DisplayName("un reporte de fallo no deja ver ni quitar la foto de nadie")
+    void falloSinFoto() {
+        ReporteUsuario reporte = ReporteUsuario.builder().id("r4").tipo(ReporteUsuario.Tipo.FALLO)
+                .estado(EstadoRevision.NUEVO).build();
+        when(reportes.findById("r4")).thenReturn(Optional.of(reporte));
+
+        assertThatThrownBy(() -> servicio.fotoReportada("r4")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> servicio.quitarFoto("r4")).isInstanceOf(BusinessException.class);
+        verify(fotos, never()).deleteById(any());
     }
 }
