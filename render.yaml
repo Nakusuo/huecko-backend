@@ -37,9 +37,9 @@ services:
       - key: HUECKO_ZONA_HORARIA
         value: America/Lima
 
-      # Postgres (Supabase, pooler en modo sesión: Render no tiene IPv6 y el
-      # host directo de Supabase solo tiene IPv6):
-      # jdbc:postgresql://aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+      # Postgres (Supabase → Connect → Session pooler; el host directo solo
+      # tiene IPv6 y Render no):
+      # jdbc:postgresql://aws-N-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
       # con usuario postgres.<ref-del-proyecto>. También vale Neon.
       - key: SPRING_DATASOURCE_URL
         sync: false
