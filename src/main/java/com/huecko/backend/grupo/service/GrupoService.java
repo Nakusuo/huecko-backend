@@ -1,7 +1,9 @@
 package com.huecko.backend.grupo.service;
 
+import com.huecko.backend.common.LimitadorDeIntentos;
 import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.common.exception.BusinessException;
+import com.huecko.backend.common.exception.DemasiadosIntentosException;
 import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.grupo.dto.DisponibilidadResponse;
@@ -21,11 +23,13 @@ import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.postgres.repository.VotoVentanaRepository;
 import com.huecko.backend.tiemporeal.AccesoRevocado;
+import com.huecko.backend.tiemporeal.MiembroUnido;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -43,6 +47,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GrupoService {
 
+    /** Códigos equivocados por persona antes de frenarla. Nadie se equivoca tanto escribiendo uno de verdad. */
+    static final int MAX_CODIGOS_FALLIDOS = 10;
+    static final Duration VENTANA_CODIGOS = Duration.ofMinutes(15);
+    private static final int INTENTOS_DE_CODIGO_LIBRE = 5;
+
     private final GrupoRepository grupoRepository;
     private final MiembroGrupoRepository miembroGrupoRepository;
     private final UsuarioRepository usuarioRepository;
@@ -52,6 +61,9 @@ public class GrupoService {
     private final VotoVentanaRepository votoVentanaRepository;
     private final VotacionExpresOperaciones votacionExpresOperaciones;
     private final ApplicationEventPublisher eventos;
+    /** Sin límite, se podrían probar códigos hasta acertar con uno ajeno. */
+    private final LimitadorDeIntentos codigosFallidos =
+            new LimitadorDeIntentos(MAX_CODIGOS_FALLIDOS, VENTANA_CODIGOS, 10_000);
 
     /* ------------------------------------------------------------------ *
      * Grupos
@@ -60,17 +72,21 @@ public class GrupoService {
     @Transactional(readOnly = true)
     public List<GrupoResponse> listar(UUID usuarioId) {
         return grupoRepository.findByMiembro(usuarioId).stream()
-                .map(grupo -> GrupoResponse.from(grupo, miembrosDe(grupo.getId())))
+                .map(grupo -> respuesta(grupo, usuarioId))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public GrupoResponse detalle(UUID usuarioId, UUID grupoId) {
         Grupo grupo = exigirMiembro(usuarioId, grupoId).getGrupo();
-        return GrupoResponse.from(grupo, miembrosDe(grupoId));
+        return respuesta(grupo, usuarioId);
     }
 
-    /** Quien crea el grupo queda de organizador y como imprescindible (HU-14). */
+    /**
+     * Quien crea el grupo queda de organizador y como imprescindible (HU-14).
+     * El grupo nace con código de invitación; quien organiza puede cambiarlo o
+     * desactivarlo.
+     */
     @Transactional
     public GrupoResponse crear(UUID usuarioId, GrupoRequests.Crear req) {
         Usuario creador = usuarioOFallar(usuarioId);
@@ -86,6 +102,7 @@ public class GrupoService {
                         ? Grupo.UMBRAL_POR_DEFECTO
                         : req.umbralDisponibilidad())
                 .creadoPor(creador)
+                .codigoInvitacion(codigoLibre())
                 .build());
 
         miembroGrupoRepository.save(MiembroGrupo.builder()
@@ -95,7 +112,7 @@ public class GrupoService {
                 .esImprescindible(true)
                 .build());
 
-        return GrupoResponse.from(grupo, miembrosDe(grupo.getId()));
+        return respuesta(grupo, usuarioId);
     }
 
     /** RF-06: cambiar el umbral, el nombre o la descripción. Solo el organizador. */
@@ -116,7 +133,7 @@ public class GrupoService {
             grupo.setUmbralDisponibilidad(req.umbralDisponibilidad());
         }
 
-        return GrupoResponse.from(grupoRepository.save(grupo), miembrosDe(grupoId));
+        return respuesta(grupoRepository.save(grupo), usuarioId);
     }
 
     /* ------------------------------------------------------------------ *
@@ -126,9 +143,9 @@ public class GrupoService {
     /**
      * Da de alta a alguien en el grupo, por correo. Solo el organizador.
      *
-     * Sustituye al antiguo «unirse por código». Con el código, cualquiera que
-     * viera la cadena en una captura o en un chat entraba solo, y el grupo se
-     * enteraba después; aquí la entrada la decide siempre quien organiza.
+     * Convive con el código de invitación (unirse): por correo la entrada la
+     * decide quien organiza persona a persona; con el código, la decide al
+     * repartirlo.
      *
      * Es idempotente: volver a añadir a alguien que ya está devuelve el grupo
      * tal cual. El resultado que pedía la llamada ya se cumple, y un 400
@@ -157,7 +174,66 @@ public class GrupoService {
                     .build());
         }
 
-        return GrupoResponse.from(grupo, miembrosDe(grupoId));
+        return respuesta(grupo, usuarioId);
+    }
+
+    /**
+     * Unirse con el código que pasó quien organiza (como en la app móvil).
+     *
+     * El código se quitó en su día porque cualquiera que lo viera en una
+     * captura entraba solo y el grupo se enteraba tarde. Por eso ahora solo lo
+     * ve quien organiza, se puede cambiar o desactivar, los fallos tienen
+     * límite y el grupo recibe un aviso en vivo con cada entrada.
+     *
+     * Es idempotente: si ya estabas, devuelve el grupo sin avisar a nadie.
+     */
+    @Transactional
+    public GrupoResponse unirse(UUID usuarioId, String codigo) {
+        String clave = usuarioId.toString();
+        Instant ahora = Instant.now();
+        if (codigosFallidos.bloqueado(clave, ahora)) {
+            throw new DemasiadosIntentosException(
+                    "Demasiados códigos incorrectos seguidos. Espera unos minutos y vuelve a intentarlo.");
+        }
+        Grupo grupo = grupoRepository.findByCodigoInvitacion(CodigosDeInvitacion.normalizar(codigo)).orElse(null);
+        if (grupo == null) {
+            codigosFallidos.registrar(clave, ahora);
+            throw new NotFoundException("Código de invitación inválido o desactivado.");
+        }
+
+        Usuario yo = usuarioOFallar(usuarioId);
+        if (yo.getRolSistema() == Usuario.RolSistema.ADMIN) {
+            throw new ForbiddenException("Una cuenta de administración no crea ni integra grupos.");
+        }
+        // Mismo cerrojo que el alta por correo: dos entradas a la vez no duplican la fila.
+        grupoRepository.bloquearPorId(grupo.getId());
+        if (!miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(grupo.getId(), usuarioId)) {
+            miembroGrupoRepository.save(MiembroGrupo.builder()
+                    .grupo(grupo)
+                    .usuario(yo)
+                    .rol(MiembroGrupo.Rol.MIEMBRO)
+                    .esImprescindible(false)
+                    .build());
+            eventos.publishEvent(new MiembroUnido(grupo.getId(), usuarioId, yo.getNombre()));
+        }
+        codigosFallidos.olvidar(clave);
+        return respuesta(grupo, usuarioId);
+    }
+
+    /** Un código nuevo; el anterior deja de servir. Solo el organizador. */
+    @Transactional
+    public GrupoResponse nuevoCodigo(UUID usuarioId, UUID grupoId) {
+        Grupo grupo = exigirOrganizador(usuarioId, grupoId).getGrupo();
+        grupo.setCodigoInvitacion(codigoLibre());
+        return respuesta(grupoRepository.save(grupo), usuarioId);
+    }
+
+    /** Nadie más entra con código hasta generar otro. Solo el organizador. */
+    @Transactional
+    public GrupoResponse desactivarCodigo(UUID usuarioId, UUID grupoId) {
+        Grupo grupo = exigirOrganizador(usuarioId, grupoId).getGrupo();
+        grupo.setCodigoInvitacion(null);
+        return respuesta(grupoRepository.save(grupo), usuarioId);
     }
 
     /** HU-14: marcar imprescindible o repartir la organización. Solo el organizador. */
@@ -182,7 +258,7 @@ public class GrupoService {
         }
 
         miembroGrupoRepository.save(objetivo);
-        return GrupoResponse.from(objetivo.getGrupo(), miembrosDe(grupoId));
+        return respuesta(objetivo.getGrupo(), usuarioId);
     }
 
     /**
@@ -305,6 +381,28 @@ public class GrupoService {
     private static final Comparator<MiembroGrupo> ORDEN_DE_MIEMBROS =
             Comparator.comparing((MiembroGrupo m) -> m.getRol() != MiembroGrupo.Rol.ORGANIZADOR)
                     .thenComparing(m -> m.getUsuario().getNombre(), String.CASE_INSENSITIVE_ORDER);
+
+    /** El grupo visto por `usuarioId`: el código de invitación solo lo ve quien organiza. */
+    private GrupoResponse respuesta(Grupo grupo, UUID usuarioId) {
+        List<MiembroResponse> miembros = miembrosDe(grupo.getId());
+        boolean organiza = miembros.stream()
+                .anyMatch(m -> m.usuarioId().equals(usuarioId) && m.rol() == MiembroGrupo.Rol.ORGANIZADOR);
+        return GrupoResponse.from(grupo, miembros, organiza);
+    }
+
+    /**
+     * Un código que ningún grupo usa. Con 32⁸ combinaciones chocar es casi
+     * imposible, pero si pasa se prueba otro en vez de romper el índice único.
+     */
+    private String codigoLibre() {
+        for (int intento = 0; intento < INTENTOS_DE_CODIGO_LIBRE; intento++) {
+            String codigo = CodigosDeInvitacion.nuevo();
+            if (!grupoRepository.existsByCodigoInvitacion(codigo)) {
+                return codigo;
+            }
+        }
+        throw new IllegalStateException("No se pudo generar un código de invitación libre");
+    }
 
     private List<MiembroResponse> miembrosDe(UUID grupoId) {
         return miembroGrupoRepository.findByGrupoIdConUsuario(grupoId).stream()

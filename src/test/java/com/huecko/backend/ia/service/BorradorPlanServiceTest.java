@@ -81,7 +81,7 @@ class BorradorPlanServiceTest {
                 USUARIO, 80, AHORA, List.of(
                 new MiembroResponse(USUARIO, "Alex", "alex@huecko.com", MiembroGrupo.Rol.ORGANIZADOR, true),
                 new MiembroResponse(UUID.randomUUID(), "Ana", "ana@huecko.com", MiembroGrupo.Rol.MIEMBRO, false),
-                new MiembroResponse(UUID.randomUUID(), "Luis", "luis@huecko.com", MiembroGrupo.Rol.MIEMBRO, false))));
+                new MiembroResponse(UUID.randomUUID(), "Luis", "luis@huecko.com", MiembroGrupo.Rol.MIEMBRO, false)), null));
         when(huecosDelGrupo.calcular(USUARIO, GRUPO, AHORA)).thenReturn(List.of(VIERNES, LUNES));
     }
 

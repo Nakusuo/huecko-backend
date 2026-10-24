@@ -74,7 +74,7 @@ class IdeasPlanServiceTest {
     private void grupo(List<PlanResponse> planes) {
         when(grupoService.detalle(USUARIO, GRUPO)).thenReturn(new GrupoResponse(GRUPO, "Proyecto Integrador",
                 "Curso de Full Stack", USUARIO, 80, AHORA, List.of(
-                new MiembroResponse(USUARIO, "Alex", "alex@huecko.com", MiembroGrupo.Rol.ORGANIZADOR, true))));
+                new MiembroResponse(USUARIO, "Alex", "alex@huecko.com", MiembroGrupo.Rol.ORGANIZADOR, true)), null));
         when(planService.listar(USUARIO, GRUPO)).thenReturn(planes);
         when(huecosDelGrupo.calcular(USUARIO, GRUPO, AHORA)).thenReturn(List.of(VIERNES));
     }

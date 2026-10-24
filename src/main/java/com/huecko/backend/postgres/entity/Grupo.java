@@ -50,6 +50,14 @@ public class Grupo {
     @JoinColumn(name = "creado_por", nullable = false)
     private Usuario creadoPor;
 
+    /**
+     * Para unirse sin que quien organiza escriba cada correo. `null` si está
+     * desactivado. Solo lo ve quien organiza (GrupoResponse), que puede
+     * cambiarlo si se filtra.
+     */
+    @Column(name = "codigo_invitacion", length = 16, unique = true)
+    private String codigoInvitacion;
+
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;
 

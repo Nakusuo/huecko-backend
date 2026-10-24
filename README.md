@@ -222,7 +222,15 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
+| `POST` | `/api/grupos/unirse` (`{codigo}`) | JWT |
+| `POST` `DELETE` | `/api/grupos/{grupoId}/codigo` (generar otro / desactivar; solo quien organiza) | JWT |
 | `GET` | `/api/actuator/health` | pública |
+
+**Código de invitación.** Cada grupo nace con uno de 8 caracteres (sin O, 0,
+I ni 1). Solo lo ve quien organiza, que puede generar otro (el anterior deja
+de valer) o desactivarlo. Diez códigos equivocados seguidos frenan a esa
+persona 15 minutos, y cada entrada avisa al grupo en vivo (`MIEMBRO_UNIDO`).
+El grupo de la demo usa `HUECKO26`.
 
 El `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está

@@ -13,9 +13,14 @@ public record GrupoResponse(
         UUID creadoPor,
         int umbralDisponibilidad,
         Instant creadoEn,
-        List<MiembroResponse> miembros
+        List<MiembroResponse> miembros,
+        /**
+         * Solo para quien organiza: es quien decide a quién dárselo. `null`
+         * para el resto, o si está desactivado.
+         */
+        String codigoInvitacion
 ) {
-    public static GrupoResponse from(Grupo grupo, List<MiembroResponse> miembros) {
+    public static GrupoResponse from(Grupo grupo, List<MiembroResponse> miembros, boolean verCodigo) {
         return new GrupoResponse(
                 grupo.getId(),
                 grupo.getNombre(),
@@ -23,6 +28,7 @@ public record GrupoResponse(
                 grupo.getCreadoPor().getId(),
                 grupo.getUmbralDisponibilidad(),
                 grupo.getCreadoEn(),
-                miembros);
+                miembros,
+                verCodigo ? grupo.getCodigoInvitacion() : null);
     }
 }
