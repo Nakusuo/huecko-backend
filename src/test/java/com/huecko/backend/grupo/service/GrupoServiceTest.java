@@ -1,6 +1,7 @@
 package com.huecko.backend.grupo.service;
 
 import com.huecko.backend.common.exception.BusinessException;
+import com.huecko.backend.common.exception.DemasiadosIntentosException;
 import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.grupo.dto.GrupoRequests;
@@ -19,6 +20,7 @@ import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.postgres.repository.VotoVentanaRepository;
 import com.huecko.backend.tiemporeal.AccesoRevocado;
+import com.huecko.backend.tiemporeal.MiembroUnido;
 import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -473,6 +475,134 @@ class GrupoServiceTest {
                 .isInstanceOf(NotFoundException.class);
 
         verify(bloqueHorarioRepository, never()).findByUsuarioIdInAndEstado(any(), any());
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Código de invitación (como en la app móvil)
+     * ------------------------------------------------------------------ */
+
+    @Test
+    @DisplayName("Un grupo nuevo nace con un código de 8 caracteres sin letras ni números ambiguos")
+    void grupoNuevoConCodigo() {
+        Usuario ana = usuario("Ana");
+        when(usuarioRepository.findById(ana.getId())).thenReturn(Optional.of(ana));
+        when(grupoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        servicio().crear(ana.getId(), new GrupoRequests.Crear("Amigos", null, null));
+
+        ArgumentCaptor<Grupo> guardado = ArgumentCaptor.forClass(Grupo.class);
+        verify(grupoRepository).save(guardado.capture());
+        assertThat(guardado.getValue().getCodigoInvitacion()).matches("[ABCDEFGHJKLMNPQRSTUVWXYZ2-9]{8}");
+    }
+
+    @Test
+    @DisplayName("Con el código se entra como integrante normal, y el grupo recibe un aviso")
+    void unirseConCodigo() {
+        Usuario luis = usuario("Luis");
+        Grupo grupo = grupoConCodigo("HUECKO26");
+        when(grupoRepository.findByCodigoInvitacion("HUECKO26")).thenReturn(Optional.of(grupo));
+        when(usuarioRepository.findById(luis.getId())).thenReturn(Optional.of(luis));
+        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, luis.getId())).thenReturn(false);
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(membresia(luis, MiembroGrupo.Rol.MIEMBRO)));
+
+        // Como lo dicta la gente: minúsculas, espacios y guiones.
+        GrupoResponse respuesta = servicio().unirse(luis.getId(), " huec ko-26 ");
+
+        ArgumentCaptor<MiembroGrupo> alta = ArgumentCaptor.forClass(MiembroGrupo.class);
+        verify(miembroGrupoRepository).save(alta.capture());
+        assertThat(alta.getValue().getRol()).isEqualTo(MiembroGrupo.Rol.MIEMBRO);
+        assertThat(alta.getValue().isEsImprescindible()).isFalse();
+        verify(eventos).publishEvent(new MiembroUnido(GRUPO, luis.getId(), "Luis"));
+        // Quien entra con el código no lo ve: no organiza.
+        assertThat(respuesta.codigoInvitacion()).isNull();
+    }
+
+    @Test
+    @DisplayName("Si ya estabas en el grupo, unirse no duplica nada ni avisa a nadie")
+    void unirseDosVeces() {
+        Usuario luis = usuario("Luis");
+        when(grupoRepository.findByCodigoInvitacion("HUECKO26")).thenReturn(Optional.of(grupoConCodigo("HUECKO26")));
+        when(usuarioRepository.findById(luis.getId())).thenReturn(Optional.of(luis));
+        when(miembroGrupoRepository.existsByGrupo_IdAndUsuario_Id(GRUPO, luis.getId())).thenReturn(true);
+
+        servicio().unirse(luis.getId(), "HUECKO26");
+
+        verify(miembroGrupoRepository, never()).save(any());
+        verify(eventos, never()).publishEvent(any(MiembroUnido.class));
+    }
+
+    @Test
+    @DisplayName("Un código que no existe (o desactivado) es 404, y tras 10 fallos se frena sin consultar")
+    void codigosEquivocados() {
+        UUID curioso = UUID.randomUUID();
+        when(grupoRepository.findByCodigoInvitacion(any())).thenReturn(Optional.empty());
+        GrupoService servicio = servicio();
+
+        for (int i = 0; i < GrupoService.MAX_CODIGOS_FALLIDOS; i++) {
+            assertThatThrownBy(() -> servicio.unirse(curioso, "AAAA2222")).isInstanceOf(NotFoundException.class);
+        }
+        assertThatThrownBy(() -> servicio.unirse(curioso, "AAAA2222")).isInstanceOf(DemasiadosIntentosException.class);
+        verify(grupoRepository, org.mockito.Mockito.times(GrupoService.MAX_CODIGOS_FALLIDOS)).findByCodigoInvitacion(any());
+    }
+
+    @Test
+    @DisplayName("Una cuenta de administración no se une a grupos ni con código")
+    void adminNoSeUne() {
+        Usuario admin = usuario("Admin");
+        admin.setRolSistema(Usuario.RolSistema.ADMIN);
+        when(grupoRepository.findByCodigoInvitacion("HUECKO26")).thenReturn(Optional.of(grupoConCodigo("HUECKO26")));
+        when(usuarioRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> servicio().unirse(admin.getId(), "HUECKO26")).isInstanceOf(ForbiddenException.class);
+        verify(miembroGrupoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("El código solo lo ve quien organiza")
+    void codigoSoloParaQuienOrganiza() {
+        Usuario ana = usuario("Ana");
+        Usuario luis = usuario("Luis");
+        Grupo grupo = grupoConCodigo("HUECKO26");
+        MiembroGrupo deAna = membresia(ana, MiembroGrupo.Rol.ORGANIZADOR);
+        MiembroGrupo deLuis = membresia(luis, MiembroGrupo.Rol.MIEMBRO);
+        deAna.setGrupo(grupo);
+        deLuis.setGrupo(grupo);
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, ana.getId())).thenReturn(Optional.of(deAna));
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, luis.getId())).thenReturn(Optional.of(deLuis));
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(deAna, deLuis));
+
+        assertThat(servicio().detalle(ana.getId(), GRUPO).codigoInvitacion()).isEqualTo("HUECKO26");
+        assertThat(servicio().detalle(luis.getId(), GRUPO).codigoInvitacion()).isNull();
+    }
+
+    @Test
+    @DisplayName("Quien organiza puede cambiar el código o desactivarlo; nadie más")
+    void cambiarYDesactivarElCodigo() {
+        Usuario ana = usuario("Ana");
+        Usuario luis = usuario("Luis");
+        Grupo grupo = grupoConCodigo("HUECKO26");
+        MiembroGrupo deAna = membresia(ana, MiembroGrupo.Rol.ORGANIZADOR);
+        MiembroGrupo deLuis = membresia(luis, MiembroGrupo.Rol.MIEMBRO);
+        deAna.setGrupo(grupo);
+        deLuis.setGrupo(grupo);
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, ana.getId())).thenReturn(Optional.of(deAna));
+        when(miembroGrupoRepository.findByGrupo_IdAndUsuario_Id(GRUPO, luis.getId())).thenReturn(Optional.of(deLuis));
+        when(miembroGrupoRepository.findByGrupoIdConUsuario(GRUPO)).thenReturn(List.of(deAna, deLuis));
+        when(grupoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertThatThrownBy(() -> servicio().nuevoCodigo(luis.getId(), GRUPO)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> servicio().desactivarCodigo(luis.getId(), GRUPO)).isInstanceOf(ForbiddenException.class);
+
+        String nuevo = servicio().nuevoCodigo(ana.getId(), GRUPO).codigoInvitacion();
+        assertThat(nuevo).isNotEqualTo("HUECKO26").hasSize(8);
+        assertThat(servicio().desactivarCodigo(ana.getId(), GRUPO).codigoInvitacion()).isNull();
+        assertThat(grupo.getCodigoInvitacion()).isNull();
+    }
+
+    private Grupo grupoConCodigo(String codigo) {
+        Grupo grupo = grupo();
+        grupo.setCodigoInvitacion(codigo);
+        return grupo;
     }
 
     /* ------------------------------------------------------------------ */

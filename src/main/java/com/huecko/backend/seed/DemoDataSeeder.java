@@ -113,6 +113,8 @@ public class DemoDataSeeder implements CommandLineRunner {
                         // cargados el heatmap saldría casi vacío y no se vería
                         // para qué sirve poder bajar el umbral (RF-06).
                         .umbralDisponibilidad(80)
+                        // Fijo y legible para enseñar «Unirme con código» en una demo.
+                        .codigoInvitacion("HUECKO26")
                         .creadoPor(organizador)
                         .build()));
 

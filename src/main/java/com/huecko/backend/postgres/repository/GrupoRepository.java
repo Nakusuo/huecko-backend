@@ -15,6 +15,10 @@ public interface GrupoRepository extends JpaRepository<Grupo, UUID> {
     /** Lo usa el seeder de demo. Los nombres no son únicos, por eso también filtra por creador. */
     Optional<Grupo> findFirstByNombreIgnoreCaseAndCreadoPor_Id(String nombre, UUID creadoPorId);
 
+    Optional<Grupo> findByCodigoInvitacion(String codigoInvitacion);
+
+    boolean existsByCodigoInvitacion(String codigoInvitacion);
+
     /**
      * Bloquea la fila del grupo hasta que termine la transacción.
      *

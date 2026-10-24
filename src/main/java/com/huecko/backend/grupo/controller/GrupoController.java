@@ -59,10 +59,32 @@ public class GrupoController {
     }
 
     /**
+     * Unirse con el código de invitación. Va antes que las rutas con
+     * `{grupoId}`, aunque Spring ya prefiere la ruta literal.
+     */
+    @PostMapping("/unirse")
+    public ResponseEntity<GrupoResponse> unirse(@AuthenticationPrincipal UsuarioAutenticado yo,
+                                                @Valid @RequestBody GrupoRequests.Unirse request) {
+        return ResponseEntity.ok(grupoService.unirse(yo.id(), request.codigo()));
+    }
+
+    /** Código nuevo (el anterior deja de servir). Solo el organizador. */
+    @PostMapping("/{grupoId}/codigo")
+    public ResponseEntity<GrupoResponse> nuevoCodigo(@AuthenticationPrincipal UsuarioAutenticado yo,
+                                                     @PathVariable UUID grupoId) {
+        return ResponseEntity.ok(grupoService.nuevoCodigo(yo.id(), grupoId));
+    }
+
+    /** Desactiva el código: nadie más entra por esa vía. Solo el organizador. */
+    @DeleteMapping("/{grupoId}/codigo")
+    public ResponseEntity<GrupoResponse> desactivarCodigo(@AuthenticationPrincipal UsuarioAutenticado yo,
+                                                          @PathVariable UUID grupoId) {
+        return ResponseEntity.ok(grupoService.desactivarCodigo(yo.id(), grupoId));
+    }
+
+    /**
      * Dar de alta a alguien en el grupo, por correo. Solo el organizador.
-     *
-     * Sustituye al antiguo `POST /grupos/unirse` por código de invitación: los
-     * integrantes se ponen al crear el grupo y se ajustan después desde aquí.
+     * Convive con el código de invitación de `/unirse`.
      */
     @PostMapping("/{grupoId}/miembros")
     public ResponseEntity<GrupoResponse> agregarMiembro(
