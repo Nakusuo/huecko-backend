@@ -4,6 +4,7 @@ import com.huecko.backend.common.ZonaHoraria;
 import com.huecko.backend.grupo.dto.DisponibilidadResponse;
 import com.huecko.backend.grupo.dto.VentanaSugeridaResponse;
 import com.huecko.backend.grupo.service.GrupoService;
+import com.huecko.backend.ia.ClienteIA;
 import org.springframework.stereotype.Component;
 
 import java.time.DayOfWeek;
@@ -12,10 +13,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -35,6 +39,9 @@ public class HuecosDelGrupo {
     /** La IA elige mejor entre pocos; más allá de 30 casi siempre son los mismos días repetidos. */
     static final int MAX_HUECOS = 30;
     static final Duration ANTELACION = Duration.ofHours(2);
+
+    private static final Locale ES = Locale.forLanguageTag("es");
+    private static final DateTimeFormatter AHORA = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM 'de' yyyy, HH:mm", ES);
 
     /**
      * @param numero desde 1, en orden de fecha y hora
@@ -83,6 +90,18 @@ public class HuecosDelGrupo {
             huecos.add(new Hueco(huecos.size() + 1, h.fecha(), h.inicio(), h.fin(), h.porcentaje(), h.libres(), h.total()));
         }
         return huecos;
+    }
+
+    /** «jueves 22 de octubre de 2026, 10:00», en la zona de los grupos: así la IA entiende «mañana». */
+    public static String ahoraLegible(Instant ahora) {
+        return LocalDateTime.ofInstant(ahora, ZonaHoraria.ZONA).format(AHORA);
+    }
+
+    /** Lo que ve la IA de cada hueco: su número, la fecha, el día en palabras y las horas. */
+    public static ClienteIA.HuecoIA paraIA(Hueco h) {
+        return new ClienteIA.HuecoIA(h.numero(), h.fecha().toString(),
+                h.fecha().getDayOfWeek().getDisplayName(TextStyle.FULL, ES),
+                h.inicio().toString(), h.fin().toString(), h.porcentaje(), h.libres(), h.total());
     }
 
     /** La siguiente hora en punto (o la misma si ya lo es): las celdas del cruce son horas enteras. */

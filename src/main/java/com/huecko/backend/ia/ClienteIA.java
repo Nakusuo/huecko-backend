@@ -107,6 +107,18 @@ public class ClienteIA {
         return post(httpAsistente, "/v1/planes/borrador", peticion, RespuestaBorrador.class);
     }
 
+    public record PeticionIdeas(String grupo, String descripcion, int integrantes, String ahora,
+                                List<String> planesRecientes, List<HuecoIA> huecos) {}
+
+    public record IdeaIA(String titulo, String categoria, String lugar, Integer numero, String razon) {}
+
+    public record RespuestaIdeas(List<IdeaIA> ideas) {}
+
+    /** Tres ideas de plan para los huecos del grupo. El número de hueco aún hay que validarlo. */
+    public RespuestaIdeas ideasPlan(PeticionIdeas peticion) {
+        return post(httpAsistente, "/v1/planes/ideas", peticion, RespuestaIdeas.class);
+    }
+
     private <T> T post(String ruta, Object cuerpo, Class<T> tipo) {
         return post(http, ruta, cuerpo, tipo);
     }

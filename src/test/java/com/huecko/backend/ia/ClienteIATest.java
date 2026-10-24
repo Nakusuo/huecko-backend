@@ -78,6 +78,23 @@ class ClienteIATest {
     }
 
     @Test
+    void lasIdeasMandanLosPlanesRecientesYLeenCadaIdea() {
+        servidor.expect(requestTo("http://ia/v1/planes/ideas"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.planesRecientes[0]").value("Repaso"))
+                .andRespond(withSuccess("{\"ideas\":[{\"titulo\":\"Almuerzo\",\"categoria\":\"COMIDA\","
+                        + "\"lugar\":\"Cafetería\",\"numero\":1,\"razon\":\"todos libres al mediodía\"}]}",
+                        MediaType.APPLICATION_JSON));
+
+        var r = cliente.ideasPlan(new ClienteIA.PeticionIdeas("Amigos", "", 3, "jueves", java.util.List.of("Repaso"),
+                java.util.List.of()));
+
+        assertThat(r.ideas()).containsExactly(
+                new ClienteIA.IdeaIA("Almuerzo", "COMIDA", "Cafetería", 1, "todos libres al mediodía"));
+        servidor.verify();
+    }
+
+    @Test
     void unErrorDelServicioSaleComoIaNoDisponible() {
         servidor.expect(requestTo("http://ia/v1/criticidad")).andRespond(withServerError());
 
