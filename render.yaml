@@ -1,4 +1,4 @@
-# Blueprint de Render: la API y el servicio de IA, en el plan gratuito.
+# Blueprint de Render: la API, el servicio de IA y la web, en el plan gratuito.
 #
 # Render > New > Blueprint > este repo. Pide en pantalla los valores marcados
 # `sync: false` (bases de datos, dominio del frontend, clave de Gemini…); los
@@ -37,7 +37,10 @@ services:
       - key: HUECKO_ZONA_HORARIA
         value: America/Lima
 
-      # Postgres (Neon): jdbc:postgresql://<host>/<base>?sslmode=require
+      # Postgres (Supabase → Connect → Session pooler; el host directo solo
+      # tiene IPv6 y Render no):
+      # jdbc:postgresql://aws-N-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+      # con usuario postgres.<ref-del-proyecto>. También vale Neon.
       - key: SPRING_DATASOURCE_URL
         sync: false
       - key: SPRING_DATASOURCE_USERNAME
@@ -48,9 +51,9 @@ services:
       - key: SPRING_DATA_MONGODB_URI
         sync: false
 
-      # Dominio exacto del frontend en Vercel, p. ej. https://huecko.vercel.app.
-      # Evita comodines como https://huecko-*.vercel.app: cualquiera puede
-      # crear en Vercel un proyecto que encaje con ese patrón.
+      # Dominio exacto de la web, p. ej. https://huecko-web.onrender.com.
+      # Evita comodines como https://huecko-*.onrender.com: cualquiera puede
+      # crear un servicio cuyo nombre encaje con ese patrón.
       - key: HUECKO_CORS_ORIGINS
         sync: false
       # Déjalo vacío al principio: regístrate en la app con tu correo y
@@ -89,7 +92,49 @@ services:
       # Clave gratuita de https://aistudio.google.com
       - key: GEMINI_API_KEY
         sync: false
+      # flash-latest devolvía 503 (saturado) en octubre de 2026; lite responde.
       - key: GEMINI_MODELO
-        value: gemini-flash-latest
+        value: gemini-flash-lite-latest
       - key: GEMINI_TIEMPO_MAXIMO
         value: "2.5"
+
+  # La web (huecko-frontend) como sitio estático: no se duerme. Las cabeceras
+  # son las de vercel.json; si cambias la CSP allí, cámbiala también aquí.
+  - type: web
+    name: huecko-web
+    runtime: static
+    repo: https://github.com/Nakusuo/huecko-frontend
+    branch: main
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # URL pública de huecko-api con /api al final. Se lee al construir:
+      # después de cambiarla, redespliega la web.
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.onrender.com wss://*.onrender.com https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      - path: /*
+        name: X-Content-Type-Options
+        value: "nosniff"
+      - path: /*
+        name: X-Frame-Options
+        value: "DENY"
+      - path: /*
+        name: Referrer-Policy
+        value: "strict-origin-when-cross-origin"
+      - path: /*
+        name: Permissions-Policy
+        value: "camera=(), microphone=(), geolocation=(), payment=()"
+      - path: /assets/*
+        name: Cache-Control
+        value: "public, max-age=31536000, immutable"
