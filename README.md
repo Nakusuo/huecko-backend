@@ -230,6 +230,7 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `PUT` `DELETE` | `/api/fotos/{fotoId}/reacciones/{reaccion}` (`CORAZON`, `RISA`, `FUEGO`, `ASOMBRO`, `APLAUSO`) | JWT |
 | `GET` `POST` | `/api/fotos/{fotoId}/comentarios` y `DELETE` `/api/comentarios/{comentarioId}` | JWT |
 | `GET` `PUT` `DELETE` | `/api/planes/{planId}/llegadas` («Llegué»: ver, marcar y deshacer) | JWT |
+| `GET` | `/api/grupos/{grupoId}/muro` (por páginas con `?antes=`) | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -280,6 +281,12 @@ barrido cada cinco minutos (`huecko.recordatorios.*`, visible en Salud) avisa al
 grupo una hora antes de un plan (`RECORDATORIO_PLAN`) y una hora antes de que
 cierre una votación (`VOTACION_POR_CERRAR`, que el cliente solo enseña a quien
 no votó). Solo llegan a quien tenga Huecko abierto: no hay notificaciones push.
+
+**Muro del grupo.** Quién entró, qué planes se propusieron, confirmaron o
+cancelaron, quién subió fotos y quiénes llegaron. Se calcula en cada petición
+a partir de esos mismos datos, sin tabla de actividad, así que nunca se
+desincroniza; lo único nuevo es la fecha de entrada al grupo (V9). Sin
+ausencias ni retrasos ni nada del horario.
 
 Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
