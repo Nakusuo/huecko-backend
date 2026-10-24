@@ -79,6 +79,17 @@ public class Usuario {
     @Column(name = "foto_actualizada_en")
     private Instant fotoActualizadaEn;
 
+    /**
+     * «Estoy libre hasta…», si lo avisó. Pasada esa hora deja de contar sin
+     * que nadie tenga que borrarlo.
+     */
+    @Column(name = "libre_hasta")
+    private Instant libreHasta;
+
+    /** Dónde o para qué está libre («en la biblioteca»). Opcional. */
+    @Column(name = "libre_nota", length = 60)
+    private String libreNota;
+
     @PrePersist
     void prePersist() {
         if (creadoEn == null) {
