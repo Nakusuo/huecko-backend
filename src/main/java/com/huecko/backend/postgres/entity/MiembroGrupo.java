@@ -7,6 +7,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "miembros_grupo")
 @Getter
@@ -36,4 +38,15 @@ public class MiembroGrupo {
     // Usado por el módulo de IA ante imprevistos (RF-16) para evaluar criticidad
     @Column(name = "es_imprescindible", nullable = false)
     private boolean esImprescindible;
+
+    /** Cuándo entró al grupo, para el muro. Nulo en las membresías de antes de guardarlo. */
+    @Column(name = "unido_en")
+    private Instant unidoEn;
+
+    @PrePersist
+    void alEntrar() {
+        if (unidoEn == null) {
+            unidoEn = Instant.now();
+        }
+    }
 }
