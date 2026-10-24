@@ -223,6 +223,7 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `PUT` `DELETE` | `/api/me/foto` (multipart, campo `foto`) | JWT |
 | `GET` | `/api/me/logros` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/perfil` y `/api/usuarios/{usuarioId}/foto` (solo con un grupo en común) | JWT |
+| `GET` `PUT` `DELETE` | `/api/me/libre-ahora` («¿Quién está libre ahora?» y tu aviso de «Estoy libre») | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -244,6 +245,13 @@ Render se borra en cada reinicio. Foto y tarjeta solo responden a quien comparte
 un grupo contigo; al resto, `404`. Las insignias salen de planes, retrasos y
 ausencias que ya se guardan; tus números solo los ves tú. Desde un reporte de
 conducta, la administración puede ver y quitar la foto de la cuenta señalada.
+
+**«¿Quién está libre ahora?».** Con nombre solo sale quien lo avisa («Estoy
+libre», con una hora de fin y una nota opcional); del horario de los demás solo
+viaja cuántos no tienen clase a esta hora, como en el heatmap (RNF-02). El aviso
+caduca solo, como mucho a las 12 horas, y llega en vivo a tus grupos
+(`LIBRE_AHORA`, tres avisos por hora como mucho). Tu propio horario se usa para
+sugerirte hasta cuándo: tu siguiente clase de hoy o las 22:00.
 
 Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está

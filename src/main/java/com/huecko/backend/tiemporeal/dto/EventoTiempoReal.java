@@ -64,7 +64,12 @@ public record EventoTiempoReal(
         /** RF-17 y RF-18: la votación exprés terminó, por votos o por defecto. */
         VOTACION_EXPRES_CERRADA,
         /** Alguien entró al grupo con el código de invitación. Lleva su id y su nombre. */
-        MIEMBRO_UNIDO
+        MIEMBRO_UNIDO,
+        /**
+         * Alguien avisó de que está libre. Lleva su id, su nombre, hasta cuándo
+         * y su nota: lo que escribió esa persona, nunca algo de su horario.
+         */
+        LIBRE_AHORA
     }
 
     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {

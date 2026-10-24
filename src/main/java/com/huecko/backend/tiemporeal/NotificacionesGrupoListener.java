@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -23,5 +24,17 @@ public class NotificacionesGrupoListener {
     public void alUnirseAlguien(MiembroUnido evento) {
         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.MIEMBRO_UNIDO,
                 Map.of("usuarioId", evento.usuarioId().toString(), "nombre", evento.nombre()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alAvisarQueEstaLibre(LibreAnunciado evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("nombre", evento.nombre());
+        datos.put("hasta", evento.hasta().toString());
+        if (evento.nota() != null) {
+            datos.put("nota", evento.nota());
+        }
+        evento.grupoIds().forEach(grupoId -> notificador.aGrupo(grupoId, EventoTiempoReal.Tipo.LIBRE_AHORA, datos));
     }
 }
