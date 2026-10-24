@@ -59,7 +59,7 @@ public class MeController {
         return ResponseEntity.ok(UsuarioResponse.from(perfilService.actualizarSocial(autenticado.id(), request)));
     }
 
-    /** Multipart, campo «foto». El servidor la rehace siempre: ver FotosDePerfil. */
+    /** Multipart, campo «foto». El servidor la rehace siempre: ver Imagenes. */
     @PutMapping(value = "/foto", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UsuarioResponse> subirFoto(
             @AuthenticationPrincipal UsuarioAutenticado autenticado,

@@ -37,4 +37,17 @@ public class NotificacionesGrupoListener {
         }
         evento.grupoIds().forEach(grupoId -> notificador.aGrupo(grupoId, EventoTiempoReal.Tipo.LIBRE_AHORA, datos));
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alCambiarElAlbum(AlbumCambiado evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("titulo", evento.titulo());
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("subidas", evento.subidas());
+        if (evento.nombre() != null) {
+            datos.put("nombre", evento.nombre());
+        }
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.ALBUM_ACTUALIZADO, datos);
+    }
 }

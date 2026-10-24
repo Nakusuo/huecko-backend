@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /**
  * Foto de perfil: un JPEG de 256 px rehecho por el servidor (ver
- * FotosDePerfil). Va aparte de Usuario para no leer sus bytes en cada consulta.
+ * Imagenes). Va aparte de Usuario para no leer sus bytes en cada consulta.
  */
 @Entity
 @Table(name = "fotos_perfil")

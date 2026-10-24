@@ -1,5 +1,6 @@
 package com.huecko.backend.usuario.service;
 
+import com.huecko.backend.common.Imagenes;
 import com.huecko.backend.common.exception.DemasiadosIntentosException;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.postgres.entity.FotoPerfil;
@@ -68,7 +69,7 @@ class FotoPerfilServiceTest {
 
         verify(fotos).save(guardada.capture());
         assertThat(guardada.getValue().getUsuarioId()).isEqualTo(ana.getId());
-        assertThat(FotosDePerfil.esJpeg(guardada.getValue().getContenido())).isTrue();
+        assertThat(Imagenes.esJpeg(guardada.getValue().getContenido())).isTrue();
         assertThat(resultado.getFotoActualizadaEn()).isEqualTo(AHORA);
     }
 
