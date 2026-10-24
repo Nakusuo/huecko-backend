@@ -7,7 +7,7 @@ paneles web con tus cuentas y tus claves.
 
 - **Tiempo:** 30–40 minutos.
 - **Coste:** 0 €.
-- **Versión:** v0.8.0 (frontend y backend), v0.7.0 (IA), con la CI en verde.
+- **Versión:** v0.8.1 (backend: `render.yaml` con la web y Supabase), v0.8.0 (frontend), v0.7.0 (IA), con la CI en verde.
 
 ## Índice
 
