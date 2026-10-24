@@ -6,9 +6,12 @@ import com.huecko.backend.common.exception.ServicioNoDisponibleException;
 import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.ia.dto.EscaneoHorarioResponse;
+import com.huecko.backend.mongo.document.LlamadaIA;
+import com.huecko.backend.mongo.repository.LlamadaIARepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -42,9 +45,11 @@ class EscaneoHorarioServiceTest {
 
     @Mock
     private AccesoAsistente acceso;
+    @Mock
+    private LlamadaIARepository llamadas;
 
     private EscaneoHorarioService service() {
-        return new EscaneoHorarioService(clienteIA, acceso);
+        return new EscaneoHorarioService(clienteIA, acceso, new RegistroUsoIA(llamadas));
     }
 
     @Test
@@ -60,6 +65,11 @@ class EscaneoHorarioServiceTest {
                 new EscaneoHorarioResponse.Bloque(1, "08:00", "10:00", "Cálculo", false),
                 new EscaneoHorarioResponse.Bloque(3, "14:00", "16:00", "Física", true));
         verify(acceso).exigir(USUARIO);
+        // Se anota el uso, sin la foto ni a quién pertenece.
+        ArgumentCaptor<LlamadaIA> anotada = ArgumentCaptor.forClass(LlamadaIA.class);
+        verify(llamadas).save(anotada.capture());
+        assertThat(anotada.getValue().getFuncion()).isEqualTo(LlamadaIA.Funcion.ESCANEO_HORARIO);
+        assertThat(anotada.getValue().isOk()).isTrue();
     }
 
     @Test
@@ -79,7 +89,7 @@ class EscaneoHorarioServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("JPG, PNG o WEBP");
 
-        verifyNoInteractions(acceso, clienteIA);
+        verifyNoInteractions(acceso, clienteIA, llamadas);
     }
 
     @Test
@@ -112,6 +122,9 @@ class EscaneoHorarioServiceTest {
         assertThatThrownBy(() -> service().escanear(USUARIO, foto(PNG, "image/png")))
                 .isInstanceOf(ServicioNoDisponibleException.class)
                 .hasMessage(AccesoAsistente.NO_DISPONIBLE);
+        ArgumentCaptor<LlamadaIA> anotada = ArgumentCaptor.forClass(LlamadaIA.class);
+        verify(llamadas).save(anotada.capture());
+        assertThat(anotada.getValue().isOk()).isFalse();
     }
 
     @Test

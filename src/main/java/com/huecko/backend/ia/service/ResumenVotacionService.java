@@ -8,6 +8,7 @@ import com.huecko.backend.ia.ClienteIA;
 import com.huecko.backend.ia.IaNoDisponibleException;
 import com.huecko.backend.ia.dto.ResumenVotacionResponse;
 import com.huecko.backend.imprevisto.service.ImprevistoService;
+import com.huecko.backend.mongo.document.LlamadaIA;
 import com.huecko.backend.plan.dto.PlanResponse;
 import com.huecko.backend.plan.dto.VentanaPlanResponse;
 import com.huecko.backend.plan.service.PlanService;
@@ -52,24 +53,27 @@ public class ResumenVotacionService {
     private final RetrasoService retrasoService;
     private final ClienteIA clienteIA;
     private final AccesoAsistente acceso;
+    private final RegistroUsoIA registro;
     private final Clock reloj;
 
     @Autowired
     public ResumenVotacionService(PlanService planService, GrupoService grupoService,
                                   ImprevistoService imprevistoService, RetrasoService retrasoService,
-                                  ClienteIA clienteIA, AccesoAsistente acceso) {
-        this(planService, grupoService, imprevistoService, retrasoService, clienteIA, acceso, Clock.systemUTC());
+                                  ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro) {
+        this(planService, grupoService, imprevistoService, retrasoService, clienteIA, acceso, registro,
+                Clock.systemUTC());
     }
 
     ResumenVotacionService(PlanService planService, GrupoService grupoService,
                            ImprevistoService imprevistoService, RetrasoService retrasoService,
-                           ClienteIA clienteIA, AccesoAsistente acceso, Clock reloj) {
+                           ClienteIA clienteIA, AccesoAsistente acceso, RegistroUsoIA registro, Clock reloj) {
         this.planService = planService;
         this.grupoService = grupoService;
         this.imprevistoService = imprevistoService;
         this.retrasoService = retrasoService;
         this.clienteIA = clienteIA;
         this.acceso = acceso;
+        this.registro = registro;
         this.reloj = reloj;
     }
 
@@ -99,7 +103,7 @@ public class ResumenVotacionService {
         acceso.exigir(usuarioId);
         ClienteIA.RespuestaResumen respuesta;
         try {
-            respuesta = clienteIA.resumenVotacion(peticion);
+            respuesta = registro.medir(LlamadaIA.Funcion.RESUMEN_VOTACION, () -> clienteIA.resumenVotacion(peticion));
         } catch (IaNoDisponibleException ex) {
             log.warn("Resumen de la votación del plan {} sin IA: {}", planId, ex.getMessage());
             throw new ServicioNoDisponibleException(AccesoAsistente.NO_DISPONIBLE);
