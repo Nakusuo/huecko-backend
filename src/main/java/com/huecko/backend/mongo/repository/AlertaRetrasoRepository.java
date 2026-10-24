@@ -22,4 +22,7 @@ public interface AlertaRetrasoRepository extends MongoRepository<AlertaRetraso, 
      * plan se cancela o cambia de fecha, «llego 15 minutos tarde» ya no dice nada.
      */
     long deleteByPlanId(String planId);
+
+    /** Las de una persona en todos sus planes, para los logros del perfil. */
+    List<AlertaRetraso> findByUsuarioId(String usuarioId);
 }

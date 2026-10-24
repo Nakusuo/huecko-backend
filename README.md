@@ -219,6 +219,10 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `POST` | `/api/auth/register` | pública |
 | `POST` | `/api/auth/login` | pública |
 | `GET` `PATCH` | `/api/me` | JWT |
+| `PUT` | `/api/me/perfil` (carrera, ciclo, frase e intereses) | JWT |
+| `PUT` `DELETE` | `/api/me/foto` (multipart, campo `foto`) | JWT |
+| `GET` | `/api/me/logros` | JWT |
+| `GET` | `/api/usuarios/{usuarioId}/perfil` y `/api/usuarios/{usuarioId}/foto` (solo con un grupo en común) | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -232,7 +236,16 @@ de valer) o desactivarlo. Diez códigos equivocados seguidos frenan a esa
 persona 15 minutos, y cada entrada avisa al grupo en vivo (`MIEMBRO_UNIDO`).
 El grupo de la demo usa `HUECKO26`.
 
-El `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
+**Perfil social y foto.** Lo que ve el resto de tus grupos al tocar tu nombre:
+carrera, ciclo, una frase, intereses e insignias. La foto se rehace siempre en
+el servidor (JPEG de 256 px, sin metadatos: una foto de celular trae el GPS de
+dónde se tomó) y se guarda en Postgres, porque el disco del plan gratuito de
+Render se borra en cada reinicio. Foto y tarjeta solo responden a quien comparte
+un grupo contigo; al resto, `404`. Las insignias salen de planes, retrasos y
+ausencias que ya se guardan; tus números solo los ves tú. Desde un reporte de
+conducta, la administración puede ver y quitar la foto de la cuenta señalada.
+
+Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
 previsto que desaparezca de la URL.
 

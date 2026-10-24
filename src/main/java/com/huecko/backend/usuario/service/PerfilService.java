@@ -6,12 +6,18 @@ import com.huecko.backend.common.exception.UnauthorizedException;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.usuario.dto.ActualizarPerfilRequest;
+import com.huecko.backend.usuario.dto.PerfilSocialRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -66,6 +72,40 @@ public class PerfilService {
         }
 
         return usuarioRepository.save(usuario);
+    }
+
+    /** Reemplaza el perfil social. Los textos vacíos se guardan como nulos. */
+    @Transactional
+    public Usuario actualizarSocial(UUID id, PerfilSocialRequest request) {
+        Usuario usuario = cargar(id);
+        usuario.setCarrera(texto(request.carrera()));
+        usuario.setCiclo(request.ciclo());
+        usuario.setBio(texto(request.bio()));
+        usuario.setIntereses(intereses(request.intereses()));
+        return usuarioRepository.save(usuario);
+    }
+
+    private static String texto(String valor) {
+        if (valor == null) {
+            return null;
+        }
+        String limpio = valor.strip().replaceAll("\\s+", " ");
+        return limpio.isEmpty() ? null : limpio;
+    }
+
+    /** Sin vacíos ni repetidos («Fútbol» y «fútbol» son el mismo), en el orden en que llegan. */
+    static List<String> intereses(List<String> recibidos) {
+        if (recibidos == null) {
+            return new ArrayList<>();
+        }
+        Map<String, String> unicos = new LinkedHashMap<>();
+        for (String interes : recibidos) {
+            String limpio = texto(interes);
+            if (limpio != null) {
+                unicos.putIfAbsent(limpio.toLowerCase(Locale.ROOT), limpio);
+            }
+        }
+        return new ArrayList<>(unicos.values());
     }
 
     private void cambiarCorreo(Usuario usuario, String email, String passwordActual) {

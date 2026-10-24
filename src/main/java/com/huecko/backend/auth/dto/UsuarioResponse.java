@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.huecko.backend.postgres.entity.Usuario;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Usuario tal como lo consume el frontend (`AuthUser` en types/auth.types.ts).
@@ -17,7 +18,13 @@ public record UsuarioResponse(
         String nombre,
         String email,
         @JsonProperty("creado_en") Instant creadoEn,
-        Usuario.RolSistema rolSistema
+        Usuario.RolSistema rolSistema,
+        String carrera,
+        Integer ciclo,
+        String bio,
+        List<String> intereses,
+        /** Nulo si no tiene foto; si no, sirve de versión para no pedirla dos veces. */
+        Instant fotoActualizadaEn
 ) {
     public static UsuarioResponse from(Usuario usuario) {
         return new UsuarioResponse(
@@ -25,6 +32,11 @@ public record UsuarioResponse(
                 usuario.getNombre(),
                 usuario.getEmail(),
                 usuario.getCreadoEn(),
-                usuario.getRolSistema());
+                usuario.getRolSistema(),
+                usuario.getCarrera(),
+                usuario.getCiclo(),
+                usuario.getBio(),
+                List.copyOf(usuario.getIntereses() == null ? List.of() : usuario.getIntereses()),
+                usuario.getFotoActualizadaEn());
     }
 }

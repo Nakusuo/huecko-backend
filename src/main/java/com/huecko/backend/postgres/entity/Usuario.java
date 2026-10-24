@@ -9,6 +9,8 @@ import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -56,6 +58,26 @@ public class Usuario {
 
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;
+
+    /* Perfil social: lo que ve el resto de tus grupos. Todo opcional. */
+
+    @Column(length = 80)
+    private String carrera;
+
+    /** Ciclo académico, de 1 a 14. */
+    private Integer ciclo;
+
+    @Column(length = 160)
+    private String bio;
+
+    @Convert(converter = ListaDeEtiquetas.class)
+    @Column(length = 300)
+    @Builder.Default
+    private List<String> intereses = new ArrayList<>();
+
+    /** Cuándo cambió la foto (tabla `fotos_perfil`); nulo si no tiene. */
+    @Column(name = "foto_actualizada_en")
+    private Instant fotoActualizadaEn;
 
     @PrePersist
     void prePersist() {

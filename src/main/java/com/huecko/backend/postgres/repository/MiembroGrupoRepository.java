@@ -1,5 +1,6 @@
 package com.huecko.backend.postgres.repository;
 
+import com.huecko.backend.postgres.entity.Grupo;
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 import com.huecko.backend.postgres.entity.MiembroGrupoId;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -27,4 +28,14 @@ public interface MiembroGrupoRepository extends JpaRepository<MiembroGrupo, Miem
     boolean existsByGrupo_IdAndUsuario_Id(UUID grupoId, UUID usuarioId);
 
     long countByGrupo_Id(UUID grupoId);
+
+    /**
+     * Grupos en los que están las dos personas. Es lo que da permiso para ver
+     * la foto y el perfil de alguien: sin un grupo en común, esa cuenta no
+     * existe para ti.
+     */
+    @Query("select a.grupo from MiembroGrupo a, MiembroGrupo b "
+            + "where a.grupo = b.grupo and a.usuario.id = :una and b.usuario.id = :otra "
+            + "order by a.grupo.nombre")
+    List<Grupo> gruposEnComun(UUID una, UUID otra);
 }

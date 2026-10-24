@@ -91,9 +91,9 @@ class ResumenVotacionServiceTest {
     private void contexto(PlanResponse plan) {
         when(planService.detalle(YO, PLAN)).thenReturn(plan);
         when(grupoService.detalle(YO, GRUPO)).thenReturn(new GrupoResponse(GRUPO, "Proyecto", "", YO, 80, AHORA,
-                List.of(new MiembroResponse(YO, "Alex", "a@h.com", MiembroGrupo.Rol.ORGANIZADOR, true),
-                        new MiembroResponse(ANA, "Ana", "ana@h.com", MiembroGrupo.Rol.MIEMBRO, false),
-                        new MiembroResponse(UUID.randomUUID(), "Luis", "l@h.com", MiembroGrupo.Rol.MIEMBRO, false)), null));
+                List.of(new MiembroResponse(YO, "Alex", "a@h.com", MiembroGrupo.Rol.ORGANIZADOR, true, null),
+                        new MiembroResponse(ANA, "Ana", "ana@h.com", MiembroGrupo.Rol.MIEMBRO, false, null),
+                        new MiembroResponse(UUID.randomUUID(), "Luis", "l@h.com", MiembroGrupo.Rol.MIEMBRO, false, null)), null));
         when(imprevistoService.ausencias(YO, PLAN)).thenReturn(List.of(
                 new ImprevistoDtos.AusenciaResponse(ANA.toString(), "Ana", "Viaje familiar", AHORA, true)));
         when(retrasoService.listar(YO, PLAN)).thenReturn(List.of(

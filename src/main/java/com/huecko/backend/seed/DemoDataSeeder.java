@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -74,6 +75,10 @@ public class DemoDataSeeder implements CommandLineRunner {
         asegurarGrupo(alex, diana);
         asegurarBloques(alex);
         asegurarBloques(diana);
+        asegurarPerfil(alex, "Ingeniería de Software", 6, "Organizo los avances del grupo. Si hay café, voy.",
+                List.of("Café", "Fútbol", "Videojuegos"));
+        asegurarPerfil(diana, "Ingeniería de Software", 6, "Prefiero estudiar temprano en la biblioteca.",
+                List.of("Biblioteca", "Anime", "Vóley"));
 
         log.info("Datos de demo listos. Entra con {} / {}", EMAIL_DEMO, PASSWORD_DEMO);
         log.info("Panel de administración: {} / {}", EMAIL_ADMIN, PASSWORD_ADMIN);
@@ -98,6 +103,18 @@ public class DemoDataSeeder implements CommandLineRunner {
                             .passwordHash(passwordEncoder.encode(password))
                             .build());
                 });
+    }
+
+    /** Solo si la cuenta aún no lo tiene: no pisa lo que alguien haya cambiado probando la demo. */
+    private void asegurarPerfil(Usuario usuario, String carrera, int ciclo, String bio, List<String> intereses) {
+        if (usuario.getCarrera() != null || !usuario.getIntereses().isEmpty()) {
+            return;
+        }
+        usuario.setCarrera(carrera);
+        usuario.setCiclo(ciclo);
+        usuario.setBio(bio);
+        usuario.setIntereses(new ArrayList<>(intereses));
+        usuarioRepository.save(usuario);
     }
 
     /** Un grupo con Alex de organizador y Diana de miembro, para que el Módulo 2 tenga con qué trabajar. */
