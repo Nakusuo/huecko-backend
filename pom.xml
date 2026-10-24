@@ -76,6 +76,13 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Swagger UI en /api/docs: la lista de endpoints para probarlos con un JWT. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.13</version>
+        </dependency>
+
         <!-- JWT. jjwt se parte en tres: api en compile, impl y jackson en runtime. -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
