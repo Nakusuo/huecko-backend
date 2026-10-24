@@ -63,4 +63,28 @@ public class NotificacionesGrupoListener {
         datos.put("comentario", evento.comentario());
         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.FOTO_CONVERSACION, datos);
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alLlegarAlguien(LlegadaRegistrada evento) {
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.LLEGADA, Map.of(
+                "planId", evento.planId().toString(),
+                "titulo", evento.titulo(),
+                "usuarioId", evento.usuarioId().toString(),
+                "nombre", evento.nombre(),
+                "aTiempo", evento.aTiempo()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alRecordar(Recordatorio evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("titulo", evento.titulo());
+        datos.put("cuando", evento.cuando().toString());
+        if (evento.lugar() != null) {
+            datos.put("lugar", evento.lugar());
+        }
+        notificador.aGrupo(evento.grupoId(), evento.tipo() == Recordatorio.Tipo.EMPIEZA_PRONTO
+                ? EventoTiempoReal.Tipo.RECORDATORIO_PLAN
+                : EventoTiempoReal.Tipo.VOTACION_POR_CERRAR, datos);
+    }
 }

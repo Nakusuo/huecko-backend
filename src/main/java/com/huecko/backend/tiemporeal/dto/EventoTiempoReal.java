@@ -80,7 +80,16 @@ public record EventoTiempoReal(
          * `comentario` = true hay uno nuevo, y quien subió la foto recibe un
          * aviso (lleva `autorFotoId` para saberlo).
          */
-        FOTO_CONVERSACION
+        FOTO_CONVERSACION,
+        /** Alguien marcó «Llegué» en un plan. Lleva quién, el plan y si llegó a tiempo. */
+        LLEGADA,
+        /** El plan confirmado empieza en una hora. */
+        RECORDATORIO_PLAN,
+        /**
+         * La votación del plan cierra en una hora. Va a todo el grupo; el
+         * cliente lo enseña solo a quien aún no votó.
+         */
+        VOTACION_POR_CERRAR
     }
 
     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {
