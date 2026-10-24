@@ -22,6 +22,7 @@ import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.entity.VotoVentana;
+import com.huecko.backend.postgres.repository.LlegadaRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -76,6 +77,7 @@ public class PlanService {
     private final AusenciaRepository ausenciaRepository;
     private final VotacionExpresRepository votacionExpresRepository;
     private final AlertaRetrasoRepository alertaRetrasoRepository;
+    private final LlegadaRepository llegadaRepository;
 
     /* ------------------------------------------------------------------ *
      * Consulta
@@ -173,6 +175,10 @@ public class PlanService {
         plan.setPlazoVotacion(req.plazoVotacion());
         plan.setEstado(Plan.Estado.PROPUESTO);
         plan.setCerradoEn(null);
+        // Fecha nueva: sus recordatorios aún no se mandaron.
+        plan.setRecordatorioEnviadoEn(null);
+        plan.setAvisoCierreEnviadoEn(null);
+        llegadaRepository.borrarDelPlan(planId);
 
         limpiarLoDeLaFechaAnterior(planId);
 

@@ -91,6 +91,12 @@ huecko:
     intervalo-cierre-ms: 60000
     # Margen para que el contexto termine de arrancar antes del primer barrido.
     retardo-inicial-ms: 10000
+  # Recordatorios en vivo al grupo: una hora antes de un plan confirmado y una
+  # hora antes de que cierre una votación (ver RecordatoriosService).
+  recordatorios:
+    activos: true
+    intervalo-ms: 300000
+    retardo-inicial-ms: 20000
   # Servicio de IA (repo huecko-ai-service). Opcional: si no responde dentro
   # del tiempo máximo, cada función usa su versión sin IA.
   ia:

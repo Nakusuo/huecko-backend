@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -51,4 +52,16 @@ public interface PlanRepository extends JpaRepository<Plan, UUID> {
     List<Plan> findConfirmadosConFecha(Collection<UUID> grupoIds);
 
     long countByCreadoPor_IdAndEstadoNot(UUID usuarioId, Plan.Estado estado);
+
+    /** Confirmados entre dos días que aún no tuvieron su recordatorio de «empieza en una hora». */
+    @Query("select p from Plan p join fetch p.ventanaConfirmada v join fetch p.grupo "
+            + "where p.estado = com.huecko.backend.postgres.entity.Plan.Estado.CONFIRMADO "
+            + "and p.recordatorioEnviadoEn is null and v.fecha between :desde and :hasta")
+    List<Plan> confirmadosSinRecordatorio(LocalDate desde, LocalDate hasta);
+
+    /** Votaciones abiertas que cierran en (desde, hasta] y aún no avisaron de ello. */
+    @Query("select p from Plan p join fetch p.grupo "
+            + "where p.estado = com.huecko.backend.postgres.entity.Plan.Estado.PROPUESTO "
+            + "and p.avisoCierreEnviadoEn is null and p.plazoVotacion > :desde and p.plazoVotacion <= :hasta")
+    List<Plan> votacionesPorCerrarSinAviso(Instant desde, Instant hasta);
 }

@@ -97,6 +97,14 @@ public class Plan {
     @Column(name = "cerrado_en")
     private Instant cerradoEn;
 
+    /** Cuándo se avisó de que empieza en una hora; nulo si aún no (ver RecordatoriosScheduler). */
+    @Column(name = "recordatorio_enviado_en")
+    private Instant recordatorioEnviadoEn;
+
+    /** Cuándo se avisó de que la votación está por cerrar; nulo si aún no. */
+    @Column(name = "aviso_cierre_enviado_en")
+    private Instant avisoCierreEnviadoEn;
+
     @PrePersist
     void prePersist() {
         if (creadoEn == null) {

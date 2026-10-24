@@ -159,6 +159,9 @@ public class SaludService {
                 case CIERRE_VOTACIONES_EXPRES ->
                         votacionRepository.findByEstadoAndExpiraEnLessThanEqual(VotacionExpres.Estado.ABIERTA, limite)
                                 .size();
+                // Votaciones que ya deberían haber recibido su «cierra en una hora» y no lo tienen.
+                case RECORDATORIOS -> planRepository.votacionesPorCerrarSinAviso(
+                        limite.minus(Duration.ofDays(1)), limite.plus(Duration.ofHours(1))).size();
             };
         } catch (RuntimeException ex) {
             // Si la base está caída ya lo dice su componente; aquí no se sabe.

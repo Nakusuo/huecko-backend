@@ -7,10 +7,12 @@ import com.huecko.backend.mongo.document.Ausencia;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
 import com.huecko.backend.mongo.repository.AusenciaRepository;
 import com.huecko.backend.postgres.entity.Grupo;
+import com.huecko.backend.postgres.entity.Llegada;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.GrupoRepository;
+import com.huecko.backend.postgres.repository.LlegadaRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -51,8 +53,9 @@ class PerfilPublicoServiceTest {
     private final PlanRepository planes = mock(PlanRepository.class);
     private final AusenciaRepository ausencias = mock(AusenciaRepository.class);
     private final AlertaRetrasoRepository retrasos = mock(AlertaRetrasoRepository.class);
+    private final LlegadaRepository llegadas = mock(LlegadaRepository.class);
     private final PerfilPublicoService servicio = new PerfilPublicoService(usuarios, grupos, miembros, planes,
-            ausencias, retrasos, Clock.fixed(AHORA, ZoneOffset.UTC));
+            ausencias, retrasos, llegadas, Clock.fixed(AHORA, ZoneOffset.UTC));
 
     private final Grupo proyecto = Grupo.builder().id(UUID.randomUUID()).nombre("Proyecto").build();
     private Usuario ana;
@@ -143,5 +146,26 @@ class PerfilPublicoServiceTest {
         assertThat(tarjeta.gruposEnComun()).containsExactly("Proyecto");
         assertThat(tarjeta.planesJuntos()).isNull();
         verify(miembros, never()).gruposEnComun(any(), any());
+    }
+
+    @Test
+    @DisplayName("Si en un plan se usó «Llegué», cuenta lo marcado: sin marcarlo no fuiste, y tarde no es a tiempo")
+    void conLlegadas() {
+        Instant inicioATiempo = LocalDateTime.of(pasadoATiempo.getVentanaConfirmada().getFecha(), LocalTime.of(10, 0))
+                .atZone(ZonaHoraria.ZONA).toInstant();
+        Instant inicioAusente = LocalDateTime.of(pasadoAusente.getVentanaConfirmada().getFecha(), LocalTime.of(10, 0))
+                .atZone(ZonaHoraria.ZONA).toInstant();
+        UUID otra = UUID.randomUUID();
+        when(llegadas.deLosPlanes(anyCollection())).thenReturn(List.of(
+                // En el que «iba a tiempo» solo marcó otra persona: Ana no fue.
+                new Llegada(new Llegada.Clave(pasadoATiempo.getId(), otra), inicioATiempo),
+                // En el que avisó que faltaría sí marcó, 25 minutos tarde: fue, pero no a tiempo.
+                new Llegada(new Llegada.Clave(pasadoAusente.getId(), ana.getId()), inicioAusente.plusSeconds(25 * 60))));
+
+        LogrosResponse logros = servicio.logros(ana.getId());
+
+        // pasadoConRetraso no tiene llegadas: sigue la aproximación (fue, con retraso).
+        assertThat(logros.planesVividos()).isEqualTo(2);
+        assertThat(logros.aTiempo()).isZero();
     }
 }

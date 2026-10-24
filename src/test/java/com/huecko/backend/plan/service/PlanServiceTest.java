@@ -20,6 +20,7 @@ import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.entity.VotoVentana;
+import com.huecko.backend.postgres.repository.LlegadaRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -74,6 +75,7 @@ class PlanServiceTest {
     @Mock private AusenciaRepository ausenciaRepository;
     @Mock private VotacionExpresRepository votacionExpresRepository;
     @Mock private AlertaRetrasoRepository alertaRetrasoRepository;
+    @Mock private LlegadaRepository llegadaRepository;
 
     private PlanService servicio;
     private Usuario ana;
@@ -83,7 +85,7 @@ class PlanServiceTest {
     void preparar() {
         servicio = new PlanService(planRepository, votoVentanaRepository, miembroGrupoRepository,
                 usuarioRepository, grupoService, new SelectorVentanaGanadora(), eventos,
-                ausenciaRepository, votacionExpresRepository, alertaRetrasoRepository);
+                ausenciaRepository, votacionExpresRepository, alertaRetrasoRepository, llegadaRepository);
         ana = usuario("Ana");
         bruno = usuario("Bruno");
 
@@ -649,6 +651,8 @@ class PlanServiceTest {
         verify(votacionExpresRepository, never())
                 .deleteByPlanIdAndEstado(PLAN.toString(), VotacionExpres.Estado.ABIERTA);
         verify(alertaRetrasoRepository).deleteByPlanId(PLAN.toString());
+        // Y las llegadas de la fecha vieja, que ya no dicen nada.
+        verify(llegadaRepository).borrarDelPlan(PLAN);
     }
 
     @Test

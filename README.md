@@ -229,6 +229,7 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `GET` `DELETE` | `/api/fotos/{fotoId}` y `GET` `/api/fotos/{fotoId}/miniatura` | JWT |
 | `PUT` `DELETE` | `/api/fotos/{fotoId}/reacciones/{reaccion}` (`CORAZON`, `RISA`, `FUEGO`, `ASOMBRO`, `APLAUSO`) | JWT |
 | `GET` `POST` | `/api/fotos/{fotoId}/comentarios` y `DELETE` `/api/comentarios/{comentarioId}` | JWT |
+| `GET` `PUT` `DELETE` | `/api/planes/{planId}/llegadas` («Llegué»: ver, marcar y deshacer) | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -270,6 +271,15 @@ Cada foto admite reacciones (❤️ 😂 🔥 😮 👏, una de cada por persona
 comentarios de hasta 300 caracteres; un comentario lo borra quien lo escribió o
 quien organiza. Todo se refresca en vivo (`FOTO_CONVERSACION`), y un comentario
 nuevo avisa a quien subió la foto.
+
+**«Llegué» y recordatorios.** En un plan confirmado, cada quien marca que llegó
+desde media hora antes hasta una hora después de que termine; cuenta como a
+tiempo hasta diez minutos tarde, y el grupo lo ve en vivo (`LLEGADA`). Si en un
+plan se usó, los logros cuentan lo marcado en vez de suponer la asistencia. Un
+barrido cada cinco minutos (`huecko.recordatorios.*`, visible en Salud) avisa al
+grupo una hora antes de un plan (`RECORDATORIO_PLAN`) y una hora antes de que
+cierre una votación (`VOTACION_POR_CERRAR`, que el cliente solo enseña a quien
+no votó). Solo llegan a quien tenga Huecko abierto: no hay notificaciones push.
 
 Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está

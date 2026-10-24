@@ -6,11 +6,14 @@ import com.huecko.backend.mongo.document.AlertaRetraso;
 import com.huecko.backend.mongo.document.Ausencia;
 import com.huecko.backend.mongo.repository.AlertaRetrasoRepository;
 import com.huecko.backend.mongo.repository.AusenciaRepository;
+import com.huecko.backend.llegada.service.LlegadaService;
 import com.huecko.backend.postgres.entity.Grupo;
+import com.huecko.backend.postgres.entity.Llegada;
 import com.huecko.backend.postgres.entity.Plan;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.entity.VentanaPlan;
 import com.huecko.backend.postgres.repository.GrupoRepository;
+import com.huecko.backend.postgres.repository.LlegadaRepository;
 import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.PlanRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
@@ -26,6 +29,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,11 +38,11 @@ import java.util.stream.Collectors;
 /**
  * Tarjeta de perfil y logros.
  *
- * Los logros salen de lo que Huecko ya sabe, sin pedir nada más: un plan
- * «vivido» es uno confirmado de tus grupos que ya empezó y al que no avisaste
- * que faltarías; «a tiempo», si además no avisaste de un retraso. Huecko no
- * sabe quién fue de verdad, así que es una buena aproximación, no una lista
- * de asistencia.
+ * Un plan «vivido» es uno confirmado de tus grupos que ya empezó y al que
+ * fuiste. Si alguien marcó «Llegué» en ese plan, cuenta lo marcado: fuiste si
+ * lo marcaste, y a tiempo si fue hasta diez minutos tarde. Si nadie lo usó
+ * (planes de antes de que existiera), se aproxima: fuiste si no avisaste que
+ * faltarías, y a tiempo si no avisaste de un retraso.
  */
 @Service
 public class PerfilPublicoService {
@@ -56,23 +61,26 @@ public class PerfilPublicoService {
     private final PlanRepository planes;
     private final AusenciaRepository ausencias;
     private final AlertaRetrasoRepository retrasos;
+    private final LlegadaRepository llegadas;
     private final Clock reloj;
 
     @Autowired
     public PerfilPublicoService(UsuarioRepository usuarios, GrupoRepository grupos, MiembroGrupoRepository miembros,
-                                PlanRepository planes, AusenciaRepository ausencias, AlertaRetrasoRepository retrasos) {
-        this(usuarios, grupos, miembros, planes, ausencias, retrasos, Clock.systemUTC());
+                                PlanRepository planes, AusenciaRepository ausencias, AlertaRetrasoRepository retrasos,
+                                LlegadaRepository llegadas) {
+        this(usuarios, grupos, miembros, planes, ausencias, retrasos, llegadas, Clock.systemUTC());
     }
 
     PerfilPublicoService(UsuarioRepository usuarios, GrupoRepository grupos, MiembroGrupoRepository miembros,
                          PlanRepository planes, AusenciaRepository ausencias, AlertaRetrasoRepository retrasos,
-                         Clock reloj) {
+                         LlegadaRepository llegadas, Clock reloj) {
         this.usuarios = usuarios;
         this.grupos = grupos;
         this.miembros = miembros;
         this.planes = planes;
         this.ausencias = ausencias;
         this.retrasos = retrasos;
+        this.llegadas = llegadas;
         this.reloj = reloj;
     }
 
@@ -147,13 +155,33 @@ public class PerfilPublicoService {
         Set<String> tarde = retrasos.findByUsuarioId(id).stream().map(AlertaRetraso::getPlanId).collect(Collectors.toSet());
         Instant ahora = reloj.instant();
 
+        List<Plan> confirmados = planes.findConfirmadosConFecha(grupoIds);
+        Map<UUID, List<Llegada>> marcadas = confirmados.isEmpty() ? Map.of()
+                : llegadas.deLosPlanes(confirmados.stream().map(Plan::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(l -> l.getId().getPlanId()));
+
         Set<UUID> vividos = new HashSet<>();
         int aTiempo = 0;
-        for (Plan plan : planes.findConfirmadosConFecha(grupoIds)) {
+        for (Plan plan : confirmados) {
             VentanaPlan fecha = plan.getVentanaConfirmada();
             Instant inicio = LocalDateTime.of(fecha.getFecha(), fecha.getHoraInicio()).atZone(ZonaHoraria.ZONA).toInstant();
+            if (inicio.isAfter(ahora)) {
+                continue;
+            }
+            List<Llegada> delPlan = marcadas.get(plan.getId());
+            if (delPlan != null) {
+                // Alguien usó «Llegué» en este plan: cuenta lo marcado, no la suposición.
+                Optional<Llegada> mia = delPlan.stream().filter(l -> l.getId().getUsuarioId().equals(usuarioId)).findFirst();
+                if (mia.isPresent()) {
+                    vividos.add(plan.getId());
+                    if (LlegadaService.aTiempo(mia.get().getLlegoEn(), inicio)) {
+                        aTiempo++;
+                    }
+                }
+                continue;
+            }
             String planId = plan.getId().toString();
-            if (inicio.isAfter(ahora) || falto.contains(planId)) {
+            if (falto.contains(planId)) {
                 continue;
             }
             vividos.add(plan.getId());

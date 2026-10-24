@@ -17,7 +17,13 @@ public enum Tarea {
             "Cierre de votaciones exprés",
             "Cierra las votaciones de imprevistos vencidas y aplica su resultado al plan (RF-17).",
             "huecko.imprevistos.cierre-automatico",
-            "huecko.imprevistos.intervalo-cierre-ms", 30_000);
+            "huecko.imprevistos.intervalo-cierre-ms", 30_000),
+
+    RECORDATORIOS(
+            "Recordatorios de planes",
+            "Avisa al grupo una hora antes de un plan confirmado y una hora antes de que cierre una votación.",
+            "huecko.recordatorios.activos",
+            "huecko.recordatorios.intervalo-ms", 300_000);
 
     private final String nombre;
     private final String descripcion;
