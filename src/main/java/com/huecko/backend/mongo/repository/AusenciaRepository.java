@@ -17,4 +17,7 @@ public interface AusenciaRepository extends MongoRepository<Ausencia, String> {
 
     /** Al reagendar: las ausencias eran para la fecha anterior. */
     long deleteByPlanId(String planId);
+
+    /** Las de una persona en todos sus planes, para los logros del perfil. */
+    List<Ausencia> findByUsuarioId(String usuarioId);
 }

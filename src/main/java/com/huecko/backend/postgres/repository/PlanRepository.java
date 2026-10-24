@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,4 +45,23 @@ public interface PlanRepository extends JpaRepository<Plan, UUID> {
 
     /** RF-10: los que ya vencieron y siguen abiertos. Es lo que barre el cierre automatico. */
     List<Plan> findByEstadoAndPlazoVotacionLessThanEqual(Plan.Estado estado, Instant limite);
+
+    /** Planes confirmados de varios grupos con su fecha ya cargada, para los logros del perfil. */
+    @Query("select p from Plan p join fetch p.ventanaConfirmada join fetch p.grupo "
+            + "where p.grupo.id in :grupoIds and p.estado = com.huecko.backend.postgres.entity.Plan.Estado.CONFIRMADO")
+    List<Plan> findConfirmadosConFecha(Collection<UUID> grupoIds);
+
+    long countByCreadoPor_IdAndEstadoNot(UUID usuarioId, Plan.Estado estado);
+
+    /** Confirmados entre dos días que aún no tuvieron su recordatorio de «empieza en una hora». */
+    @Query("select p from Plan p join fetch p.ventanaConfirmada v join fetch p.grupo "
+            + "where p.estado = com.huecko.backend.postgres.entity.Plan.Estado.CONFIRMADO "
+            + "and p.recordatorioEnviadoEn is null and v.fecha between :desde and :hasta")
+    List<Plan> confirmadosSinRecordatorio(LocalDate desde, LocalDate hasta);
+
+    /** Votaciones abiertas que cierran en (desde, hasta] y aún no avisaron de ello. */
+    @Query("select p from Plan p join fetch p.grupo "
+            + "where p.estado = com.huecko.backend.postgres.entity.Plan.Estado.PROPUESTO "
+            + "and p.avisoCierreEnviadoEn is null and p.plazoVotacion > :desde and p.plazoVotacion <= :hasta")
+    List<Plan> votacionesPorCerrarSinAviso(Instant desde, Instant hasta);
 }

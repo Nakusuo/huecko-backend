@@ -2,6 +2,7 @@ package com.huecko.backend.grupo.dto;
 
 import com.huecko.backend.postgres.entity.MiembroGrupo;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -17,7 +18,9 @@ public record MiembroResponse(
         String email,
         MiembroGrupo.Rol rol,
         /** HU-14: si su ausencia debe tratarse como crítica. */
-        boolean esImprescindible
+        boolean esImprescindible,
+        /** Nulo si no tiene foto. La foto se pide aparte, con permiso (ver FotoPerfilService). */
+        Instant fotoActualizadaEn
 ) {
     public static MiembroResponse from(MiembroGrupo miembro) {
         return new MiembroResponse(
@@ -25,6 +28,7 @@ public record MiembroResponse(
                 miembro.getUsuario().getNombre(),
                 miembro.getUsuario().getEmail(),
                 miembro.getRol(),
-                miembro.isEsImprescindible());
+                miembro.isEsImprescindible(),
+                miembro.getUsuario().getFotoActualizadaEn());
     }
 }

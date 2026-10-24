@@ -19,7 +19,10 @@ import com.huecko.backend.reporte.dto.ReporteResponse;
 import com.huecko.backend.reporte.service.ReporteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -106,6 +109,21 @@ public class AdminController {
     public ResponseEntity<ReporteResponse> suspension(@PathVariable String id,
                                                       @Valid @RequestBody ReporteRequests.Suspension request) {
         return ResponseEntity.ok(reporteService.cambiarSuspension(id, request.suspendido()));
+    }
+
+    /** La foto que señala el reporte (del álbum o de perfil), para juzgarla. Sin caché: se está revisando. */
+    @GetMapping(value = "/reportes/{id}/foto", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> fotoReportada(@PathVariable String id) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(reporteService.fotoReportada(id));
+    }
+
+    /** Quita la foto que señala el reporte. Si la persona insiste, se la suspende desde el mismo reporte. */
+    @DeleteMapping("/reportes/{id}/foto")
+    public ResponseEntity<ReporteResponse> quitarFoto(@PathVariable String id) {
+        return ResponseEntity.ok(reporteService.quitarFoto(id));
     }
 
     /* ------------------------------ Consola ----------------------------- */

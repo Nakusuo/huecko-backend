@@ -219,6 +219,18 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `POST` | `/api/auth/register` | pública |
 | `POST` | `/api/auth/login` | pública |
 | `GET` `PATCH` | `/api/me` | JWT |
+| `PUT` | `/api/me/perfil` (carrera, ciclo, frase e intereses) | JWT |
+| `PUT` `DELETE` | `/api/me/foto` (multipart, campo `foto`) | JWT |
+| `GET` | `/api/me/logros` | JWT |
+| `GET` | `/api/usuarios/{usuarioId}/perfil` y `/api/usuarios/{usuarioId}/foto` (solo con un grupo en común) | JWT |
+| `GET` `PUT` `DELETE` | `/api/me/libre-ahora` («¿Quién está libre ahora?» y tu aviso de «Estoy libre») | JWT |
+| `GET` | `/api/grupos/{grupoId}/album` (los planes vividos del grupo y sus fotos) | JWT |
+| `GET` `POST` | `/api/planes/{planId}/fotos` (POST multipart con una o varias partes `fotos`) | JWT |
+| `GET` `DELETE` | `/api/fotos/{fotoId}` y `GET` `/api/fotos/{fotoId}/miniatura` | JWT |
+| `PUT` `DELETE` | `/api/fotos/{fotoId}/reacciones/{reaccion}` (`CORAZON`, `RISA`, `FUEGO`, `ASOMBRO`, `APLAUSO`) | JWT |
+| `GET` `POST` | `/api/fotos/{fotoId}/comentarios` y `DELETE` `/api/comentarios/{comentarioId}` | JWT |
+| `GET` `PUT` `DELETE` | `/api/planes/{planId}/llegadas` («Llegué»: ver, marcar y deshacer) | JWT |
+| `GET` | `/api/grupos/{grupoId}/muro` (por páginas con `?antes=`) | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -232,7 +244,51 @@ de valer) o desactivarlo. Diez códigos equivocados seguidos frenan a esa
 persona 15 minutos, y cada entrada avisa al grupo en vivo (`MIEMBRO_UNIDO`).
 El grupo de la demo usa `HUECKO26`.
 
-El `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
+**Perfil social y foto.** Lo que ve el resto de tus grupos al tocar tu nombre:
+carrera, ciclo, una frase, intereses e insignias. La foto se rehace siempre en
+el servidor (JPEG de 256 px, sin metadatos: una foto de celular trae el GPS de
+dónde se tomó) y se guarda en Postgres, porque el disco del plan gratuito de
+Render se borra en cada reinicio. Foto y tarjeta solo responden a quien comparte
+un grupo contigo; al resto, `404`. Las insignias salen de planes, retrasos y
+ausencias que ya se guardan; tus números solo los ves tú. Desde un reporte de
+conducta, la administración puede ver y quitar la foto de la cuenta señalada.
+
+**«¿Quién está libre ahora?».** Con nombre solo sale quien lo avisa («Estoy
+libre», con una hora de fin y una nota opcional); del horario de los demás solo
+viaja cuántos no tienen clase a esta hora, como en el heatmap (RNF-02). El aviso
+caduca solo, como mucho a las 12 horas, y llega en vivo a tus grupos
+(`LIBRE_AHORA`, tres avisos por hora como mucho). Tu propio horario se usa para
+sugerirte hasta cuándo: tu siguiente clase de hoy o las 22:00.
+
+**Álbum de recuerdos.** Cuando un plan confirmado ya empezó, la gente del grupo
+puede subir sus fotos (diez por persona y plan, sesenta por grupo, diez por
+envío). El servidor las rehace como las de perfil: JPEG de 1280 px sin
+metadatos, más una miniatura de 320 px. Solo las ve el grupo; borra quien la
+subió o quien organiza, y el resto puede reportarla (`tipo: FOTO`). Desde ese
+reporte la administración la ve y la quita. Cada subida avisa en vivo
+(`ALBUM_ACTUALIZADO`).
+
+Cada foto admite reacciones (❤️ 😂 🔥 😮 👏, una de cada por persona) y
+comentarios de hasta 300 caracteres; un comentario lo borra quien lo escribió o
+quien organiza. Todo se refresca en vivo (`FOTO_CONVERSACION`), y un comentario
+nuevo avisa a quien subió la foto.
+
+**«Llegué» y recordatorios.** En un plan confirmado, cada quien marca que llegó
+desde media hora antes hasta una hora después de que termine; cuenta como a
+tiempo hasta diez minutos tarde, y el grupo lo ve en vivo (`LLEGADA`). Si en un
+plan se usó, los logros cuentan lo marcado en vez de suponer la asistencia. Un
+barrido cada cinco minutos (`huecko.recordatorios.*`, visible en Salud) avisa al
+grupo una hora antes de un plan (`RECORDATORIO_PLAN`) y una hora antes de que
+cierre una votación (`VOTACION_POR_CERRAR`, que el cliente solo enseña a quien
+no votó). Solo llegan a quien tenga Huecko abierto: no hay notificaciones push.
+
+**Muro del grupo.** Quién entró, qué planes se propusieron, confirmaron o
+cancelaron, quién subió fotos y quiénes llegaron. Se calcula en cada petición
+a partir de esos mismos datos, sin tabla de actividad, así que nunca se
+desincroniza; lo único nuevo es la fecha de entrada al grupo (V9). Sin
+ausencias ni retrasos ni nada del horario.
+
+Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
 previsto que desaparezca de la URL.
 

@@ -17,6 +17,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -178,6 +179,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleMetodoNoPermitido(HttpRequestMethodNotSupportedException ex) {
         return build(HttpStatus.METHOD_NOT_ALLOWED, "Método no permitido",
                 "El método " + ex.getMethod() + " no está disponible en esta ruta.");
+    }
+
+    /**
+     * Quien pidió se fue antes de recibir la respuesta: cerró la página o el
+     * visor de fotos a mitad de una descarga. No es un fallo del servidor, así
+     * que no va a la bandeja del admin, y tampoco hay a quién responder.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClienteDesconectado(AsyncRequestNotUsableException ex) {
+        log.debug("El cliente cerró la conexión antes de la respuesta: {}", ex.getMessage());
     }
 
     /**

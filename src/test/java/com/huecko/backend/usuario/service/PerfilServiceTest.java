@@ -5,11 +5,13 @@ import com.huecko.backend.common.exception.ForbiddenException;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.usuario.dto.ActualizarPerfilRequest;
+import com.huecko.backend.usuario.dto.PerfilSocialRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -98,5 +100,23 @@ class PerfilServiceTest {
                 new ActualizarPerfilRequest(null, "bea@h.com", "secreta123")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("en uso");
+    }
+
+    @Test
+    @DisplayName("el perfil social se reemplaza entero: lo vacío se borra y los intereses no se repiten")
+    void perfilSocial() {
+        perfil.actualizarSocial(ana.getId(), new PerfilSocialRequest(
+                "  Ingeniería   de Software ", 6, "Siempre con café", List.of("Fútbol", " fútbol ", "", "Anime")));
+
+        assertThat(ana.getCarrera()).isEqualTo("Ingeniería de Software");
+        assertThat(ana.getCiclo()).isEqualTo(6);
+        assertThat(ana.getIntereses()).containsExactly("Fútbol", "Anime");
+
+        perfil.actualizarSocial(ana.getId(), new PerfilSocialRequest(" ", null, null, null));
+
+        assertThat(ana.getCarrera()).isNull();
+        assertThat(ana.getCiclo()).isNull();
+        assertThat(ana.getBio()).isNull();
+        assertThat(ana.getIntereses()).isEmpty();
     }
 }

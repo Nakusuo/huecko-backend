@@ -64,7 +64,32 @@ public record EventoTiempoReal(
         /** RF-17 y RF-18: la votación exprés terminó, por votos o por defecto. */
         VOTACION_EXPRES_CERRADA,
         /** Alguien entró al grupo con el código de invitación. Lleva su id y su nombre. */
-        MIEMBRO_UNIDO
+        MIEMBRO_UNIDO,
+        /**
+         * Alguien avisó de que está libre. Lleva su id, su nombre, hasta cuándo
+         * y su nota: lo que escribió esa persona, nunca algo de su horario.
+         */
+        LIBRE_AHORA,
+        /**
+         * Cambió el álbum de un plan. Con `subidas` > 0 alguien subió fotos y
+         * se avisa; con 0 se borró alguna y solo hay que refrescar.
+         */
+        ALBUM_ACTUALIZADO,
+        /**
+         * Cambiaron las reacciones o los comentarios de una foto. Con
+         * `comentario` = true hay uno nuevo, y quien subió la foto recibe un
+         * aviso (lleva `autorFotoId` para saberlo).
+         */
+        FOTO_CONVERSACION,
+        /** Alguien marcó «Llegué» en un plan. Lleva quién, el plan y si llegó a tiempo. */
+        LLEGADA,
+        /** El plan confirmado empieza en una hora. */
+        RECORDATORIO_PLAN,
+        /**
+         * La votación del plan cierra en una hora. Va a todo el grupo; el
+         * cliente lo enseña solo a quien aún no votó.
+         */
+        VOTACION_POR_CERRAR
     }
 
     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -23,5 +24,67 @@ public class NotificacionesGrupoListener {
     public void alUnirseAlguien(MiembroUnido evento) {
         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.MIEMBRO_UNIDO,
                 Map.of("usuarioId", evento.usuarioId().toString(), "nombre", evento.nombre()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alAvisarQueEstaLibre(LibreAnunciado evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("nombre", evento.nombre());
+        datos.put("hasta", evento.hasta().toString());
+        if (evento.nota() != null) {
+            datos.put("nota", evento.nota());
+        }
+        evento.grupoIds().forEach(grupoId -> notificador.aGrupo(grupoId, EventoTiempoReal.Tipo.LIBRE_AHORA, datos));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alCambiarElAlbum(AlbumCambiado evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("titulo", evento.titulo());
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("subidas", evento.subidas());
+        if (evento.nombre() != null) {
+            datos.put("nombre", evento.nombre());
+        }
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.ALBUM_ACTUALIZADO, datos);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alConversarSobreUnaFoto(ConversacionFoto evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("fotoId", evento.fotoId().toString());
+        datos.put("autorFotoId", evento.autorFotoId().toString());
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("nombre", evento.nombre());
+        datos.put("titulo", evento.titulo());
+        datos.put("comentario", evento.comentario());
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.FOTO_CONVERSACION, datos);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alLlegarAlguien(LlegadaRegistrada evento) {
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.LLEGADA, Map.of(
+                "planId", evento.planId().toString(),
+                "titulo", evento.titulo(),
+                "usuarioId", evento.usuarioId().toString(),
+                "nombre", evento.nombre(),
+                "aTiempo", evento.aTiempo()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alRecordar(Recordatorio evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("titulo", evento.titulo());
+        datos.put("cuando", evento.cuando().toString());
+        if (evento.lugar() != null) {
+            datos.put("lugar", evento.lugar());
+        }
+        notificador.aGrupo(evento.grupoId(), evento.tipo() == Recordatorio.Tipo.EMPIEZA_PRONTO
+                ? EventoTiempoReal.Tipo.RECORDATORIO_PLAN
+                : EventoTiempoReal.Tipo.VOTACION_POR_CERRAR, datos);
     }
 }
