@@ -222,7 +222,15 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
+| `POST` | `/api/grupos/unirse` (`{codigo}`) | JWT |
+| `POST` `DELETE` | `/api/grupos/{grupoId}/codigo` (generar otro / desactivar; solo quien organiza) | JWT |
 | `GET` | `/api/actuator/health` | pública |
+
+**Código de invitación.** Cada grupo nace con uno de 8 caracteres (sin O, 0,
+I ni 1). Solo lo ve quien organiza, que puede generar otro (el anterior deja
+de valer) o desactivarlo. Diez códigos equivocados seguidos frenan a esa
+persona 15 minutos, y cada entrada avisa al grupo en vivo (`MIEMBRO_UNIDO`).
+El grupo de la demo usa `HUECKO26`.
 
 El `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
@@ -239,8 +247,9 @@ Toda respuesta de error, incluidas las de Spring Security, sale igual:
 ### Servicio de IA (opcional)
 
 El repo `huecko-ai-service` añade IA sin volverla obligatoria: si no responde a
-tiempo, cada función usa su versión sin IA. Hoy cubre RF-16, la criticidad de
-una ausencia leída a partir del motivo.
+tiempo, cada función usa su versión sin IA. Hoy cubre RF-16 (la criticidad de
+una ausencia leída a partir del motivo), la sugerencia en la votación exprés y
+el **escaneo del horario con una foto**, traído de la app móvil.
 
 | Variable | Para qué |
 | --- | --- |
@@ -249,6 +258,19 @@ una ausencia leída a partir del motivo.
 | `HUECKO_IA_TOKEN` | Secreto compartido con el servicio; tiene que ser el mismo en los dos. |
 | `HUECKO_IA_TIEMPO_MAXIMO_MS` | Espera máxima por respuesta (por defecto 3000). |
 | `HUECKO_IA_RECOMENDACIONES=true` | Sugerencia de la IA (CANCELAR, REAGENDAR o MANTENER) en cada votación exprés. Llega en segundo plano; si falla, no hay sugerencia. |
+| `HUECKO_IA_ASISTENTE` | Funciones que pide la persona, como el escaneo del horario o el borrador de plan (por defecto `true`). Con `false` responden 503. |
+| `HUECKO_IA_TIEMPO_MAXIMO_ASISTENTE_MS` | Espera máxima en esas funciones (por defecto 30000). |
+
+Rutas que usa el frontend (con sesión; cada persona tiene un cupo de 20 usos
+cada 15 minutos):
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/api/ia/estado` | `{disponible, estado}`: si conviene ofrecer la IA. No gasta cupo. |
+| `POST` | `/api/ia/horario/escaneo` | Multipart con el campo `imagen` (JPG, PNG o WEBP, hasta 5 MB). Devuelve `{bloques: [{diaSemana, horaInicio, horaFin, titulo, dudoso}]}` sin guardar nada. 503 si la IA no responde, 429 sin cupo. |
+| `POST` | `/api/grupos/{id}/ia/borrador-plan` | `{texto}` → `{titulo, categoria, lugar, ventanas[0–3], plazoVotacion}` para rellenar «Proponer plan». La IA elige entre los huecos reales del grupo de los próximos 14 días; el backend comprueba cada opción y deja el plazo una hora antes de la primera. No guarda nada. |
+| `POST` | `/api/grupos/{id}/ia/ideas-plan` | Sin cuerpo → `{ideas: [{titulo, categoria, lugar, ventana, razon}]}`: 3 planes para los huecos libres del grupo, sin repetir sus 5 planes más recientes. Cada `ventana` son las dos primeras horas de un hueco real, o `null`. |
+| `POST` | `/api/planes/{id}/ia/resumen` | Sin cuerpo → `{resumen, recomendacion, razon}`: cómo va la votación (votos, opción que gana, ausencias, retrasos) y qué conviene hacer. La recomendación solo puede ser una que el estado del plan admite (CERRAR/ESPERAR al votar, MANTENER/REPROGRAMAR confirmado); si no, llega `null`. Cualquier miembro; no cambia nada. Un plan cancelado da 400. |
 
 Quien propuso el plan o fue marcado imprescindible sigue siendo crítico por
 reglas; el modelo solo decide el resto, y solo si hay motivo escrito.

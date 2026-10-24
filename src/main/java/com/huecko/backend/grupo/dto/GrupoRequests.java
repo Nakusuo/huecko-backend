@@ -17,6 +17,14 @@ public final class GrupoRequests {
     private GrupoRequests() {
     }
 
+    /** Unirse con el código que pasó quien organiza. */
+    public record Unirse(
+            @NotBlank(message = "Escribe el código de invitación")
+            @Size(max = 32, message = "Código de invitación inválido")
+            String codigo
+    ) {
+    }
+
     /** HU-05: crear el grupo. El umbral es opcional y cae a unanimidad. */
     public record Crear(
             @NotBlank(message = "El nombre del grupo es obligatorio")
