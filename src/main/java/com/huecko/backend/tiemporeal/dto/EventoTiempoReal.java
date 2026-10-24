@@ -74,7 +74,13 @@ public record EventoTiempoReal(
          * Cambió el álbum de un plan. Con `subidas` > 0 alguien subió fotos y
          * se avisa; con 0 se borró alguna y solo hay que refrescar.
          */
-        ALBUM_ACTUALIZADO
+        ALBUM_ACTUALIZADO,
+        /**
+         * Cambiaron las reacciones o los comentarios de una foto. Con
+         * `comentario` = true hay uno nuevo, y quien subió la foto recibe un
+         * aviso (lleva `autorFotoId` para saberlo).
+         */
+        FOTO_CONVERSACION
     }
 
     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {

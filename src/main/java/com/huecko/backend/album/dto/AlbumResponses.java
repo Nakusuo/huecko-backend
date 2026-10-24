@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Respuestas del álbum de recuerdos. Las fotos se piden aparte, por su id. */
@@ -32,7 +33,25 @@ public final class AlbumResponses {
                             boolean puedeSubir, int restantesMias, int restantesGrupo, List<Foto> fotos) {
     }
 
+    /**
+     * `reacciones` cuenta cada una por su nombre (CORAZON, RISA…); en
+     * `misReacciones` van las que dejaste tú.
+     */
     public record Foto(UUID id, UUID autorId, String autorNombre, int ancho, int alto, Instant subidaEn,
-                       boolean puedeBorrar) {
+                       boolean puedeBorrar, Map<String, Integer> reacciones, List<String> misReacciones,
+                       int comentarios) {
+    }
+
+    /** Reacciones y número de comentarios de una foto, tras reaccionar o comentar. */
+    public record Interacciones(UUID fotoId, Map<String, Integer> reacciones, List<String> misReacciones,
+                                int comentarios) {
+
+        public static Interacciones vacias(UUID fotoId) {
+            return new Interacciones(fotoId, Map.of(), List.of(), 0);
+        }
+    }
+
+    public record Comentario(UUID id, UUID autorId, String autorNombre, Instant autorFotoActualizadaEn,
+                             String texto, Instant creadoEn, boolean puedeBorrar) {
     }
 }

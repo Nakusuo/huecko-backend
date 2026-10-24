@@ -50,4 +50,17 @@ public class NotificacionesGrupoListener {
         }
         notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.ALBUM_ACTUALIZADO, datos);
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alConversarSobreUnaFoto(ConversacionFoto evento) {
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("planId", evento.planId().toString());
+        datos.put("fotoId", evento.fotoId().toString());
+        datos.put("autorFotoId", evento.autorFotoId().toString());
+        datos.put("usuarioId", evento.usuarioId().toString());
+        datos.put("nombre", evento.nombre());
+        datos.put("titulo", evento.titulo());
+        datos.put("comentario", evento.comentario());
+        notificador.aGrupo(evento.grupoId(), EventoTiempoReal.Tipo.FOTO_CONVERSACION, datos);
+    }
 }
