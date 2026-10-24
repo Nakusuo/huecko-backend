@@ -7,7 +7,7 @@ paneles web con tus cuentas y tus claves.
 
 - **Tiempo:** 30–40 minutos.
 - **Coste:** 0 €.
-- **Versión:** v0.7.0 (frontend, backend e IA), con la CI en verde.
+- **Versión:** v0.8.0 (frontend y backend), v0.7.0 (IA), con la CI en verde.
 
 ## Índice
 
