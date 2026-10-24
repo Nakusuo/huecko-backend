@@ -7,10 +7,12 @@ import com.huecko.backend.ia.dto.EscaneoHorarioResponse;
 import com.huecko.backend.ia.dto.EstadoIAResponse;
 import com.huecko.backend.ia.dto.IaRequests;
 import com.huecko.backend.ia.dto.IdeasPlanResponse;
+import com.huecko.backend.ia.dto.ResumenVotacionResponse;
 import com.huecko.backend.ia.service.AccesoAsistente;
 import com.huecko.backend.ia.service.BorradorPlanService;
 import com.huecko.backend.ia.service.EscaneoHorarioService;
 import com.huecko.backend.ia.service.IdeasPlanService;
+import com.huecko.backend.ia.service.ResumenVotacionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -31,7 +33,8 @@ import java.util.UUID;
  * Funciones de IA que la persona usa directamente (las de la app móvil).
  *
  * Las que dependen de un grupo o de un plan cuelgan de su ruta
- * (/grupos/{id}/ia/…): así se lee de un vistazo a qué datos tocan.
+ * (/grupos/{id}/ia/…, /planes/{id}/ia/…): así se lee de un vistazo a qué
+ * datos tocan.
  */
 @RestController
 @RequestMapping("/api")
@@ -41,6 +44,7 @@ public class IaController {
     private final EscaneoHorarioService escaneoHorarioService;
     private final BorradorPlanService borradorPlanService;
     private final IdeasPlanService ideasPlanService;
+    private final ResumenVotacionService resumenVotacionService;
     private final AccesoAsistente acceso;
     private final VigiaIA vigiaIA;
 
@@ -75,5 +79,13 @@ public class IaController {
             @AuthenticationPrincipal UsuarioAutenticado yo,
             @PathVariable UUID grupoId) {
         return ResponseEntity.ok(ideasPlanService.proponer(yo.id(), grupoId));
+    }
+
+    /** Cómo va la votación de un plan y qué conviene hacer. Cualquier miembro; no cambia nada. */
+    @PostMapping("/planes/{planId}/ia/resumen")
+    public ResponseEntity<ResumenVotacionResponse> resumenVotacion(
+            @AuthenticationPrincipal UsuarioAutenticado yo,
+            @PathVariable UUID planId) {
+        return ResponseEntity.ok(resumenVotacionService.resumir(yo.id(), planId));
     }
 }
