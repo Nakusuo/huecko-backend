@@ -58,6 +58,26 @@ class ClienteIATest {
     }
 
     @Test
+    void elBorradorMandaLosHuecosNumeradosYLeeLasOpciones() {
+        servidor.expect(requestTo("http://ia/v1/planes/borrador"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.texto").value("cena el viernes"))
+                .andExpect(jsonPath("$.huecos[0].numero").value(1))
+                .andExpect(jsonPath("$.huecos[0].fecha").value("2026-10-23"))
+                .andRespond(withSuccess("{\"titulo\":\"Cena\",\"categoria\":\"COMIDA\",\"lugar\":null,"
+                        + "\"opciones\":[{\"numero\":1,\"horaInicio\":\"19:00\",\"horaFin\":\"21:00\"}],"
+                        + "\"horasPlazo\":24}", MediaType.APPLICATION_JSON));
+
+        var r = cliente.borradorPlan(new ClienteIA.PeticionBorrador("cena el viernes", "Amigos", 3,
+                "jueves 22 de octubre de 2026, 10:00",
+                java.util.List.of(new ClienteIA.HuecoIA(1, "2026-10-23", "viernes", "12:00", "22:00", 100, 3, 3))));
+
+        assertThat(r.opciones()).containsExactly(new ClienteIA.OpcionIA(1, "19:00", "21:00"));
+        assertThat(r.horasPlazo()).isEqualTo(24);
+        servidor.verify();
+    }
+
+    @Test
     void unErrorDelServicioSaleComoIaNoDisponible() {
         servidor.expect(requestTo("http://ia/v1/criticidad")).andRespond(withServerError());
 

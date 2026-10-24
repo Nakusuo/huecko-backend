@@ -98,12 +98,12 @@ huecko:
     # Secreto compartido con el servicio; sin él, el servicio no atiende.
     token: ${HUECKO_IA_TOKEN:}
     tiempo-maximo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_MS:3000}
-    # Leer la foto de un horario tarda más: la persona espera con una barra de
-    # progreso, y si no llega, el frontend usa su lector local.
-    tiempo-maximo-escaneo-ms: ${HUECKO_IA_TIEMPO_MAXIMO_ESCANEO_MS:30000}
+    # Lo que pide la persona (leer una foto, redactar un plan) tarda más:
+    # alguien espera con un «Pensando…», y si no llega, la pantalla sigue sin IA.
+    tiempo-maximo-asistente-ms: ${HUECKO_IA_TIEMPO_MAXIMO_ASISTENTE_MS:30000}
     # Sugerencia de la IA en cada votación exprés que se abre.
     recomendaciones: ${HUECKO_IA_RECOMENDACIONES:false}
-    # Funciones de IA que la persona pide (escaneo del horario…). Con `false`
+    # Funciones de IA que la persona pide (escaneo del horario, borrador de plan…). Con `false`
     # responden 503 y el frontend sigue sin IA.
     asistente: ${HUECKO_IA_ASISTENTE:true}
   imprevistos:
