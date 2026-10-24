@@ -11,10 +11,14 @@ import com.huecko.backend.observabilidad.service.RegistroFallos;
 import com.huecko.backend.postgres.entity.FotoPerfil;
 import com.huecko.backend.postgres.entity.Usuario;
 import com.huecko.backend.postgres.repository.FotoPerfilRepository;
+import com.huecko.backend.postgres.repository.FotoPlanRepository;
+import com.huecko.backend.postgres.repository.FotoPlanRepository.FotoPlanResumen;
+import com.huecko.backend.postgres.repository.MiembroGrupoRepository;
 import com.huecko.backend.postgres.repository.UsuarioRepository;
 import com.huecko.backend.reporte.dto.ReporteRequests;
 import com.huecko.backend.reporte.dto.ReporteResponse;
 import com.huecko.backend.tiemporeal.AccesoRevocado;
+import com.huecko.backend.tiemporeal.AlbumCambiado;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,8 +36,8 @@ import java.util.stream.Collectors;
 /**
  * Reportes de las personas y errores del navegador.
  *
- * El admin no navega cuentas: la única acción que tiene sobre una es
- * suspenderla, y solo desde un reporte de CONDUCTA que la señala.
+ * El admin no navega cuentas: sobre una solo puede suspenderla o quitarle
+ * una foto, y siempre desde un reporte (de CONDUCTA o de FOTO) que la señala.
  */
 @Service
 public class ReporteService {
@@ -47,18 +51,24 @@ public class ReporteService {
 
     private final ReporteUsuarioRepository reportes;
     private final UsuarioRepository usuarios;
-    private final FotoPerfilRepository fotos;
+    private final FotoPerfilRepository fotosPerfil;
+    private final FotoPlanRepository fotosAlbum;
+    private final MiembroGrupoRepository miembros;
     private final RegistroFallos registroFallos;
     private final ApplicationEventPublisher eventos;
     /** Acotado en claves: con el registro abierto, un mapa por usuario crecía sin fin. */
     private final LimitadorDeIntentos erroresRecientes =
             new LimitadorDeIntentos(MAX_ERRORES_CLIENTE, VENTANA_ERRORES, 10_000);
 
-    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios, FotoPerfilRepository fotos,
-                          RegistroFallos registroFallos, ApplicationEventPublisher eventos) {
+    public ReporteService(ReporteUsuarioRepository reportes, UsuarioRepository usuarios,
+                          FotoPerfilRepository fotosPerfil, FotoPlanRepository fotosAlbum,
+                          MiembroGrupoRepository miembros, RegistroFallos registroFallos,
+                          ApplicationEventPublisher eventos) {
         this.reportes = reportes;
         this.usuarios = usuarios;
-        this.fotos = fotos;
+        this.fotosPerfil = fotosPerfil;
+        this.fotosAlbum = fotosAlbum;
+        this.miembros = miembros;
         this.registroFallos = registroFallos;
         this.eventos = eventos;
     }
@@ -87,9 +97,31 @@ public class ReporteService {
             reporte.cuentaReportadaId(reportada.getId().toString())
                     .cuentaReportadaNombre(reportada.getNombre())
                     .cuentaReportadaEmail(reportada.getEmail());
+        } else if (req.tipo() == ReporteUsuario.Tipo.FOTO) {
+            FotoPlanResumen foto = fotoDelAlbum(autor, req.fotoId());
+            reporte.fotoId(foto.getId().toString());
+            // Quien la subió queda señalado: si insiste, se le puede suspender desde aquí.
+            usuarios.findById(foto.getAutorId()).ifPresent(subio -> reporte
+                    .cuentaReportadaId(subio.getId().toString())
+                    .cuentaReportadaNombre(subio.getNombre())
+                    .cuentaReportadaEmail(subio.getEmail()));
         }
 
         reportes.save(reporte.build());
+    }
+
+    /** Una foto de un grupo al que no perteneces se responde como inexistente. */
+    private FotoPlanResumen fotoDelAlbum(UsuarioAutenticado autor, UUID fotoId) {
+        if (fotoId == null) {
+            throw new BusinessException("Indica la foto de la que informas.");
+        }
+        FotoPlanResumen foto = fotosAlbum.findResumenById(fotoId)
+                .filter(f -> miembros.existsByGrupo_IdAndUsuario_Id(f.getGrupoId(), autor.id()))
+                .orElseThrow(() -> new NotFoundException("Esa foto ya no existe."));
+        if (foto.getAutorId().equals(autor.id())) {
+            throw new BusinessException("Esa foto es tuya: puedes borrarla tú desde el álbum.");
+        }
+        return foto;
     }
 
     private Usuario cuentaReportada(UsuarioAutenticado autor, String email) {
@@ -171,22 +203,36 @@ public class ReporteService {
     }
 
     /**
-     * La foto de la cuenta que señala un reporte de CONDUCTA, para que la
-     * administración pueda juzgarla. Es la única forma de que vea una foto:
-     * no pertenece a ningún grupo.
+     * La foto que señala un reporte, para que la administración pueda
+     * juzgarla: la del álbum en uno de FOTO, la de perfil en uno de CONDUCTA.
+     * Es la única forma de que vea una foto: no pertenece a ningún grupo.
      */
     @Transactional(readOnly = true)
-    public FotoPerfil fotoReportada(String id) {
-        Usuario cuenta = cuentaSenalada(buscar(id));
-        return fotos.findById(cuenta.getId()).orElseThrow(() -> new NotFoundException("Esa cuenta no tiene foto."));
+    public byte[] fotoReportada(String id) {
+        ReporteUsuario reporte = buscar(id);
+        if (reporte.getTipo() == ReporteUsuario.Tipo.FOTO) {
+            return fotosAlbum.contenido(UUID.fromString(reporte.getFotoId()))
+                    .orElseThrow(() -> new NotFoundException("Esa foto ya no existe."));
+        }
+        Usuario cuenta = cuentaSenalada(reporte);
+        return fotosPerfil.findById(cuenta.getId()).map(FotoPerfil::getContenido)
+                .orElseThrow(() -> new NotFoundException("Esa cuenta no tiene foto."));
     }
 
-    /** Quita la foto de la cuenta reportada. Como suspender, cuenta como revisar el reporte. */
+    /** Quita la foto que señala el reporte. Como suspender, cuenta como revisar el reporte. */
     @Transactional
     public ReporteResponse quitarFoto(String id) {
         ReporteUsuario reporte = buscar(id);
+        if (reporte.getTipo() == ReporteUsuario.Tipo.FOTO) {
+            UUID fotoId = UUID.fromString(reporte.getFotoId());
+            fotosAlbum.findResumenById(fotoId).ifPresent(foto -> {
+                fotosAlbum.deleteById(fotoId);
+                eventos.publishEvent(new AlbumCambiado(foto.getGrupoId(), foto.getPlanId(), "", foto.getAutorId(), null, 0));
+            });
+            return revisado(reporte, cuentasDe(reporte).get(reporte.getCuentaReportadaId()));
+        }
         Usuario cuenta = cuentaSenalada(reporte);
-        fotos.deleteById(cuenta.getId());
+        fotosPerfil.deleteById(cuenta.getId());
         cuenta.setFotoActualizadaEn(null);
         usuarios.save(cuenta);
         return revisado(reporte, cuenta);
@@ -198,11 +244,20 @@ public class ReporteService {
         }
         reporte.setActualizadoEn(Instant.now());
         reportes.save(reporte);
-        return ReporteResponse.from(reporte, cuenta);
+        return ReporteResponse.from(reporte, cuenta, hayFoto(reporte, cuenta));
+    }
+
+    /** Si queda una foto que revisar: la del álbum en FOTO, la de perfil en CONDUCTA. */
+    private Boolean hayFoto(ReporteUsuario reporte, Usuario cuenta) {
+        return switch (reporte.getTipo()) {
+            case FOTO -> reporte.getFotoId() != null && fotosAlbum.existsById(UUID.fromString(reporte.getFotoId()));
+            case CONDUCTA -> cuenta == null ? null : cuenta.getFotoActualizadaEn() != null;
+            case FALLO -> null;
+        };
     }
 
     private Usuario cuentaSenalada(ReporteUsuario reporte) {
-        if (reporte.getTipo() != ReporteUsuario.Tipo.CONDUCTA || reporte.getCuentaReportadaId() == null) {
+        if (reporte.getTipo() == ReporteUsuario.Tipo.FALLO || reporte.getCuentaReportadaId() == null) {
             throw new BusinessException("Este reporte no señala a ninguna cuenta.");
         }
         return usuarios.findById(UUID.fromString(reporte.getCuentaReportadaId()))
@@ -222,8 +277,8 @@ public class ReporteService {
                 .orElse(Map.of());
     }
 
-    private static ReporteResponse respuesta(ReporteUsuario r, Map<String, Usuario> cuentas) {
+    private ReporteResponse respuesta(ReporteUsuario r, Map<String, Usuario> cuentas) {
         Usuario cuenta = r.getCuentaReportadaId() == null ? null : cuentas.get(r.getCuentaReportadaId());
-        return ReporteResponse.from(r, cuenta);
+        return ReporteResponse.from(r, cuenta, hayFoto(r, cuenta));
     }
 }

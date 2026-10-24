@@ -69,7 +69,12 @@ public record EventoTiempoReal(
          * Alguien avisó de que está libre. Lleva su id, su nombre, hasta cuándo
          * y su nota: lo que escribió esa persona, nunca algo de su horario.
          */
-        LIBRE_AHORA
+        LIBRE_AHORA,
+        /**
+         * Cambió el álbum de un plan. Con `subidas` > 0 alguien subió fotos y
+         * se avisa; con 0 se borró alguna y solo hay que refrescar.
+         */
+        ALBUM_ACTUALIZADO
     }
 
     public static EventoTiempoReal de(Tipo tipo, UUID grupoId, Map<String, Object> datos) {

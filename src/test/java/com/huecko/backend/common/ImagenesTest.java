@@ -1,4 +1,4 @@
-package com.huecko.backend.usuario.service;
+package com.huecko.backend.common;
 
 import com.huecko.backend.common.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
@@ -16,8 +16,8 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** El servidor rehace cada foto de perfil: tamaño fijo, sin metadatos y solo si de verdad es una imagen. */
-class FotosDePerfilTest {
+/** El servidor rehace cada foto que se sube: tamaño acotado, sin metadatos y solo si de verdad es una imagen. */
+class ImagenesTest {
 
     private static byte[] codificar(BufferedImage imagen, String formato) throws IOException {
         ByteArrayOutputStream salida = new ByteArrayOutputStream();
@@ -41,12 +41,12 @@ class FotosDePerfilTest {
     @Test
     @DisplayName("Una foto grande y apaisada sale como JPEG cuadrado de 256 px")
     void cuadradaYPequena() throws IOException {
-        byte[] resultado = FotosDePerfil.normalizar(codificar(rectangulo(1600, 900), "png"));
+        byte[] resultado = Imagenes.perfil(codificar(rectangulo(1600, 900), "png"));
 
-        assertThat(FotosDePerfil.esJpeg(resultado)).isTrue();
+        assertThat(Imagenes.esJpeg(resultado)).isTrue();
         BufferedImage imagen = leer(resultado);
-        assertThat(imagen.getWidth()).isEqualTo(FotosDePerfil.LADO);
-        assertThat(imagen.getHeight()).isEqualTo(FotosDePerfil.LADO);
+        assertThat(imagen.getWidth()).isEqualTo(Imagenes.LADO_PERFIL);
+        assertThat(imagen.getHeight()).isEqualTo(Imagenes.LADO_PERFIL);
         assertThat(resultado.length).isLessThan(30_000);
     }
 
@@ -66,7 +66,7 @@ class FotosDePerfilTest {
         conExif.write(original, 2, original.length - 2);
         assertThat(new String(conExif.toByteArray(), StandardCharsets.ISO_8859_1)).contains("GPS-12.0464");
 
-        String resultado = new String(FotosDePerfil.normalizar(conExif.toByteArray()), StandardCharsets.ISO_8859_1);
+        String resultado = new String(Imagenes.perfil(conExif.toByteArray()), StandardCharsets.ISO_8859_1);
 
         assertThat(resultado).doesNotContain("GPS-12.0464").doesNotContain("Exif");
     }
@@ -76,7 +76,7 @@ class FotosDePerfilTest {
     void transparenteSobreBlanco() throws IOException {
         BufferedImage transparente = new BufferedImage(300, 300, BufferedImage.TYPE_INT_ARGB);
 
-        BufferedImage imagen = leer(FotosDePerfil.normalizar(codificar(transparente, "png")));
+        BufferedImage imagen = leer(Imagenes.perfil(codificar(transparente, "png")));
 
         Color esquina = new Color(imagen.getRGB(0, 0));
         assertThat(esquina.getRed()).isGreaterThan(240);
@@ -87,33 +87,58 @@ class FotosDePerfilTest {
     @Test
     @DisplayName("Lo que no es JPG ni PNG se rechaza, aunque empiece como un PNG")
     void soloImagenesDeVerdad() {
-        assertThatThrownBy(() -> FotosDePerfil.normalizar("hola".getBytes(StandardCharsets.UTF_8)))
+        assertThatThrownBy(() -> Imagenes.perfil("hola".getBytes(StandardCharsets.UTF_8)))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("JPG o PNG");
 
         byte[] falso = new byte[64];
         System.arraycopy(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 0, falso, 0, 8);
         byte[] html = "<html><script>alert(1)</script>".getBytes(StandardCharsets.UTF_8);
         System.arraycopy(html, 0, falso, 8, html.length);
-        assertThatThrownBy(() -> FotosDePerfil.normalizar(falso))
+        assertThatThrownBy(() -> Imagenes.perfil(falso))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("No se pudo leer");
 
-        assertThatThrownBy(() -> FotosDePerfil.normalizar(new byte[0])).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> Imagenes.perfil(new byte[0])).isInstanceOf(BusinessException.class);
     }
 
     @Test
     @DisplayName("Una imagen enorme se rechaza antes de decodificarla")
     void demasiadoGrande() throws IOException {
-        byte[] enorme = codificar(rectangulo(FotosDePerfil.LADO_MAXIMO + 1, 4), "png");
+        byte[] enorme = codificar(rectangulo(Imagenes.LADO_MAXIMO + 1, 4), "png");
 
-        assertThatThrownBy(() -> FotosDePerfil.normalizar(enorme))
+        assertThatThrownBy(() -> Imagenes.perfil(enorme))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("demasiado grande");
     }
 
     @Test
     @DisplayName("Una foto más pequeña que 256 px se amplía para que todas tengan el mismo tamaño")
     void pequenaSeAmplia() throws IOException {
-        BufferedImage imagen = leer(FotosDePerfil.normalizar(codificar(rectangulo(120, 90), "jpg")));
+        BufferedImage imagen = leer(Imagenes.perfil(codificar(rectangulo(120, 90), "jpg")));
 
-        assertThat(imagen.getWidth()).isEqualTo(FotosDePerfil.LADO);
+        assertThat(imagen.getWidth()).isEqualTo(Imagenes.LADO_PERFIL);
+    }
+
+    @Test
+    @DisplayName("Una foto de álbum conserva su forma con el lado largo a 1280 px, y trae una miniatura cuadrada")
+    void recuerdo() throws IOException {
+        Imagenes.Recuerdo r = Imagenes.recuerdo(codificar(rectangulo(4000, 3000), "jpg"));
+
+        assertThat(r.ancho()).isEqualTo(Imagenes.LADO_RECUERDO);
+        assertThat(r.alto()).isEqualTo(960);
+        BufferedImage foto = leer(r.foto());
+        assertThat(foto.getWidth()).isEqualTo(Imagenes.LADO_RECUERDO);
+        assertThat(foto.getHeight()).isEqualTo(960);
+        BufferedImage miniatura = leer(r.miniatura());
+        assertThat(miniatura.getWidth()).isEqualTo(Imagenes.LADO_MINIATURA);
+        assertThat(miniatura.getHeight()).isEqualTo(Imagenes.LADO_MINIATURA);
+    }
+
+    @Test
+    @DisplayName("Una foto de álbum pequeña no se amplía")
+    void recuerdoPequeno() throws IOException {
+        Imagenes.Recuerdo r = Imagenes.recuerdo(codificar(rectangulo(640, 480), "png"));
+
+        assertThat(r.ancho()).isEqualTo(640);
+        assertThat(r.alto()).isEqualTo(480);
+        assertThat(Imagenes.esJpeg(r.foto())).isTrue();
     }
 }

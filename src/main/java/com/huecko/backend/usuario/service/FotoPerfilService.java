@@ -1,5 +1,6 @@
 package com.huecko.backend.usuario.service;
 
+import com.huecko.backend.common.Imagenes;
 import com.huecko.backend.common.LimitadorDeIntentos;
 import com.huecko.backend.common.exception.DemasiadosIntentosException;
 import com.huecko.backend.common.exception.NotFoundException;
@@ -60,7 +61,7 @@ public class FotoPerfilService {
         if (!cambios.permitir(usuarioId.toString(), ahora)) {
             throw new DemasiadosIntentosException("Cambiaste de foto muchas veces seguidas. Espera un rato y vuelve a intentarlo.");
         }
-        byte[] limpia = FotosDePerfil.normalizar(original);
+        byte[] limpia = Imagenes.perfil(original);
 
         fotos.save(new FotoPerfil(usuarioId, limpia, ahora));
         usuario.setFotoActualizadaEn(ahora);

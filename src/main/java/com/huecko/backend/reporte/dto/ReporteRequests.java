@@ -7,21 +7,31 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.UUID;
+
 /** Cuerpos de las peticiones de reportes y fallos. Los límites evitan que un cliente llene la base. */
 public final class ReporteRequests {
 
     private ReporteRequests() {
     }
 
-    /** «Reportar un problema». `emailReportado` solo cuenta en CONDUCTA, y ahí es obligatorio. */
+    /**
+     * «Reportar un problema». `emailReportado` solo cuenta en CONDUCTA y
+     * `fotoId` solo en FOTO; en cada caso es obligatorio.
+     */
     public record Crear(
             @NotNull(message = "Indica el tipo de problema") ReporteUsuario.Tipo tipo,
             @NotBlank(message = "Describe el problema")
             @Size(min = 10, max = 1000, message = "La descripción debe tener entre 10 y 1000 caracteres")
             String descripcion,
             @Size(max = 300) String ruta,
-            @Email(message = "El correo no tiene un formato válido") @Size(max = 180) String emailReportado
+            @Email(message = "El correo no tiene un formato válido") @Size(max = 180) String emailReportado,
+            UUID fotoId
     ) {
+        /** Para los reportes que no son de una foto. */
+        public Crear(ReporteUsuario.Tipo tipo, String descripcion, String ruta, String emailReportado) {
+            this(tipo, descripcion, ruta, emailReportado, null);
+        }
     }
 
     /** Error de JavaScript que el frontend envía solo. */

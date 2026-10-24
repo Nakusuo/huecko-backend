@@ -111,16 +111,16 @@ public class AdminController {
         return ResponseEntity.ok(reporteService.cambiarSuspension(id, request.suspendido()));
     }
 
-    /** La foto de la cuenta reportada, para juzgarla. Sin caché: es contenido que se está revisando. */
+    /** La foto que señala el reporte (del álbum o de perfil), para juzgarla. Sin caché: se está revisando. */
     @GetMapping(value = "/reportes/{id}/foto", produces = MediaType.IMAGE_JPEG_VALUE)
     public ResponseEntity<byte[]> fotoReportada(@PathVariable String id) {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .contentType(MediaType.IMAGE_JPEG)
-                .body(reporteService.fotoReportada(id).getContenido());
+                .body(reporteService.fotoReportada(id));
     }
 
-    /** Quita la foto de la cuenta reportada. La persona puede subir otra; si insiste, se la suspende. */
+    /** Quita la foto que señala el reporte. Si la persona insiste, se la suspende desde el mismo reporte. */
     @DeleteMapping("/reportes/{id}/foto")
     public ResponseEntity<ReporteResponse> quitarFoto(@PathVariable String id) {
         return ResponseEntity.ok(reporteService.quitarFoto(id));

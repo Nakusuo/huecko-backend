@@ -24,8 +24,11 @@ import java.time.Instant;
 @Builder
 public class ReporteUsuario {
 
-    /** FALLO = algo de la app no funciona; CONDUCTA = problema con otra cuenta. */
-    public enum Tipo { FALLO, CONDUCTA }
+    /**
+     * FALLO = algo de la app no funciona; CONDUCTA = problema con otra cuenta;
+     * FOTO = una foto de un álbum que no debería estar ahí.
+     */
+    public enum Tipo { FALLO, CONDUCTA, FOTO }
 
     @Id
     private String id;
@@ -46,12 +49,15 @@ public class ReporteUsuario {
 
     private String autorEmail;
 
-    /** Solo en CONDUCTA: la cuenta de la que se informa. */
+    /** En CONDUCTA, la cuenta de la que se informa; en FOTO, quien subió la foto. */
     private String cuentaReportadaId;
 
     private String cuentaReportadaNombre;
 
     private String cuentaReportadaEmail;
+
+    /** Solo en FOTO: la foto del álbum (`fotos_plan`) de la que se informa. */
+    private String fotoId;
 
     private EstadoRevision estado;
 

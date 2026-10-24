@@ -224,6 +224,9 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `GET` | `/api/me/logros` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/perfil` y `/api/usuarios/{usuarioId}/foto` (solo con un grupo en común) | JWT |
 | `GET` `PUT` `DELETE` | `/api/me/libre-ahora` («¿Quién está libre ahora?» y tu aviso de «Estoy libre») | JWT |
+| `GET` | `/api/grupos/{grupoId}/album` (los planes vividos del grupo y sus fotos) | JWT |
+| `GET` `POST` | `/api/planes/{planId}/fotos` (POST multipart con una o varias partes `fotos`) | JWT |
+| `GET` `DELETE` | `/api/fotos/{fotoId}` y `GET` `/api/fotos/{fotoId}/miniatura` | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -252,6 +255,14 @@ viaja cuántos no tienen clase a esta hora, como en el heatmap (RNF-02). El avis
 caduca solo, como mucho a las 12 horas, y llega en vivo a tus grupos
 (`LIBRE_AHORA`, tres avisos por hora como mucho). Tu propio horario se usa para
 sugerirte hasta cuándo: tu siguiente clase de hoy o las 22:00.
+
+**Álbum de recuerdos.** Cuando un plan confirmado ya empezó, la gente del grupo
+puede subir sus fotos (diez por persona y plan, sesenta por grupo, diez por
+envío). El servidor las rehace como las de perfil: JPEG de 1280 px sin
+metadatos, más una miniatura de 320 px. Solo las ve el grupo; borra quien la
+subió o quien organiza, y el resto puede reportarla (`tipo: FOTO`). Desde ese
+reporte la administración la ve y la quita. Cada subida avisa en vivo
+(`ALBUM_ACTUALIZADO`).
 
 Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
