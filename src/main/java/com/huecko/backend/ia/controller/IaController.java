@@ -6,9 +6,11 @@ import com.huecko.backend.ia.dto.BorradorPlanResponse;
 import com.huecko.backend.ia.dto.EscaneoHorarioResponse;
 import com.huecko.backend.ia.dto.EstadoIAResponse;
 import com.huecko.backend.ia.dto.IaRequests;
+import com.huecko.backend.ia.dto.IdeasPlanResponse;
 import com.huecko.backend.ia.service.AccesoAsistente;
 import com.huecko.backend.ia.service.BorradorPlanService;
 import com.huecko.backend.ia.service.EscaneoHorarioService;
+import com.huecko.backend.ia.service.IdeasPlanService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -38,6 +40,7 @@ public class IaController {
 
     private final EscaneoHorarioService escaneoHorarioService;
     private final BorradorPlanService borradorPlanService;
+    private final IdeasPlanService ideasPlanService;
     private final AccesoAsistente acceso;
     private final VigiaIA vigiaIA;
 
@@ -64,5 +67,13 @@ public class IaController {
             @PathVariable UUID grupoId,
             @Valid @RequestBody IaRequests.BorradorPlan peticion) {
         return ResponseEntity.ok(borradorPlanService.redactar(yo.id(), grupoId, peticion.texto()));
+    }
+
+    /** Tres ideas de plan para los huecos del grupo. Cualquier miembro; no guarda nada. */
+    @PostMapping("/grupos/{grupoId}/ia/ideas-plan")
+    public ResponseEntity<IdeasPlanResponse> ideasPlan(
+            @AuthenticationPrincipal UsuarioAutenticado yo,
+            @PathVariable UUID grupoId) {
+        return ResponseEntity.ok(ideasPlanService.proponer(yo.id(), grupoId));
     }
 }

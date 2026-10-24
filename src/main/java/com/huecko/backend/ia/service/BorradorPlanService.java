@@ -15,15 +15,11 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.time.format.TextStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -53,8 +49,6 @@ public class BorradorPlanService {
     /** La votación cierra al menos esto antes de la primera opción, para que dé tiempo a organizarse. */
     static final Duration MARGEN_ANTES_DEL_PLAN = Duration.ofHours(1);
 
-    private static final Locale ES = Locale.forLanguageTag("es");
-    private static final DateTimeFormatter AHORA = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM 'de' yyyy, HH:mm", ES);
     private static final Set<String> CATEGORIAS = Set.of("ESTUDIO", "REUNION", "COMIDA", "DEPORTE", "SALIDA", "OTRO");
 
     private final GrupoService grupoService;
@@ -89,8 +83,8 @@ public class BorradorPlanService {
         try {
             respuesta = clienteIA.borradorPlan(new ClienteIA.PeticionBorrador(
                     texto.trim(), grupo.nombre(), grupo.miembros().size(),
-                    LocalDateTime.ofInstant(ahora, ZonaHoraria.ZONA).format(AHORA),
-                    huecos.stream().map(BorradorPlanService::aHuecoIA).toList()));
+                    HuecosDelGrupo.ahoraLegible(ahora),
+                    huecos.stream().map(HuecosDelGrupo::paraIA).toList()));
         } catch (IaNoDisponibleException ex) {
             log.warn("Borrador de plan sin IA en el grupo {}: {}", grupoId, ex.getMessage());
             throw new ServicioNoDisponibleException(AccesoAsistente.NO_DISPONIBLE);
@@ -200,11 +194,5 @@ public class BorradorPlanService {
         }
         String limpio = valor.strip();
         return limpio.length() > maximo ? limpio.substring(0, maximo) : limpio;
-    }
-
-    private static ClienteIA.HuecoIA aHuecoIA(HuecosDelGrupo.Hueco h) {
-        return new ClienteIA.HuecoIA(h.numero(), h.fecha().toString(),
-                h.fecha().getDayOfWeek().getDisplayName(TextStyle.FULL, ES),
-                h.inicio().toString(), h.fin().toString(), h.porcentaje(), h.libres(), h.total());
     }
 }
