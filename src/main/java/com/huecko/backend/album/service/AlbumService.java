@@ -63,6 +63,7 @@ public class AlbumService {
     private final PlanRepository planes;
     private final MiembroGrupoRepository miembros;
     private final UsuarioRepository usuarios;
+    private final ConversacionFotoService conversacion;
     private final ApplicationEventPublisher eventos;
     private final Clock reloj;
     /** Rehacer cada foto cuesta CPU, y el plan gratuito tiene poca. */
@@ -70,16 +71,19 @@ public class AlbumService {
 
     @Autowired
     public AlbumService(FotoPlanRepository fotos, PlanRepository planes, MiembroGrupoRepository miembros,
-                        UsuarioRepository usuarios, ApplicationEventPublisher eventos) {
-        this(fotos, planes, miembros, usuarios, eventos, Clock.systemUTC());
+                        UsuarioRepository usuarios, ConversacionFotoService conversacion,
+                        ApplicationEventPublisher eventos) {
+        this(fotos, planes, miembros, usuarios, conversacion, eventos, Clock.systemUTC());
     }
 
     AlbumService(FotoPlanRepository fotos, PlanRepository planes, MiembroGrupoRepository miembros,
-                 UsuarioRepository usuarios, ApplicationEventPublisher eventos, Clock reloj) {
+                 UsuarioRepository usuarios, ConversacionFotoService conversacion,
+                 ApplicationEventPublisher eventos, Clock reloj) {
         this.fotos = fotos;
         this.planes = planes;
         this.miembros = miembros;
         this.usuarios = usuarios;
+        this.conversacion = conversacion;
         this.eventos = eventos;
         this.reloj = reloj;
     }
@@ -128,10 +132,17 @@ public class AlbumService {
         int restantesMias = Math.max(0, MAX_POR_PERSONA_Y_PLAN - mias);
         int restantesGrupo = Math.max(0, MAX_POR_GRUPO - (int) fotos.countByGrupoId(plan.getGrupo().getId()));
 
+        Map<UUID, AlbumResponses.Interacciones> interacciones =
+                conversacion.resumen(suyas.stream().map(FotoPlanResumen::getId).toList(), usuarioId);
         List<AlbumResponses.Foto> lista = suyas.stream()
-                .map(f -> new AlbumResponses.Foto(f.getId(), f.getAutorId(),
-                        nombres.getOrDefault(f.getAutorId(), "Alguien"), f.getAncho(), f.getAlto(), f.getSubidaEn(),
-                        organiza || f.getAutorId().equals(usuarioId)))
+                .map(f -> {
+                    AlbumResponses.Interacciones i = interacciones.getOrDefault(f.getId(),
+                            AlbumResponses.Interacciones.vacias(f.getId()));
+                    return new AlbumResponses.Foto(f.getId(), f.getAutorId(),
+                            nombres.getOrDefault(f.getAutorId(), "Alguien"), f.getAncho(), f.getAlto(), f.getSubidaEn(),
+                            organiza || f.getAutorId().equals(usuarioId), i.reacciones(), i.misReacciones(),
+                            i.comentarios());
+                })
                 .toList();
         VentanaPlan fecha = plan.getVentanaConfirmada();
         return new AlbumResponses.AlbumPlan(plan.getId(), plan.getGrupo().getId(), plan.getTitulo(),

@@ -57,7 +57,8 @@ class AlbumServiceTest {
     private final MiembroGrupoRepository miembros = mock(MiembroGrupoRepository.class);
     private final UsuarioRepository usuarios = mock(UsuarioRepository.class);
     private final ApplicationEventPublisher eventos = mock(ApplicationEventPublisher.class);
-    private final AlbumService servicio = new AlbumService(fotos, planes, miembros, usuarios, eventos,
+    private final ConversacionFotoService conversacion = mock(ConversacionFotoService.class);
+    private final AlbumService servicio = new AlbumService(fotos, planes, miembros, usuarios, conversacion, eventos,
             Clock.fixed(AHORA, ZoneOffset.UTC));
 
     private final Grupo grupo = Grupo.builder().id(UUID.randomUUID()).nombre("Proyecto").build();

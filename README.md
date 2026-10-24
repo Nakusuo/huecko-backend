@@ -227,6 +227,8 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | `GET` | `/api/grupos/{grupoId}/album` (los planes vividos del grupo y sus fotos) | JWT |
 | `GET` `POST` | `/api/planes/{planId}/fotos` (POST multipart con una o varias partes `fotos`) | JWT |
 | `GET` `DELETE` | `/api/fotos/{fotoId}` y `GET` `/api/fotos/{fotoId}/miniatura` | JWT |
+| `PUT` `DELETE` | `/api/fotos/{fotoId}/reacciones/{reaccion}` (`CORAZON`, `RISA`, `FUEGO`, `ASOMBRO`, `APLAUSO`) | JWT |
+| `GET` `POST` | `/api/fotos/{fotoId}/comentarios` y `DELETE` `/api/comentarios/{comentarioId}` | JWT |
 | `GET` `POST` | `/api/usuarios/{usuarioId}/bloques-horario` | JWT |
 | `GET` | `/api/usuarios/{usuarioId}/bloques-horario/borradores` | JWT |
 | `PUT` `DELETE` | `/api/usuarios/{usuarioId}/bloques-horario/{bloqueId}` | JWT |
@@ -263,6 +265,11 @@ metadatos, más una miniatura de 320 px. Solo las ve el grupo; borra quien la
 subió o quien organiza, y el resto puede reportarla (`tipo: FOTO`). Desde ese
 reporte la administración la ve y la quita. Cada subida avisa en vivo
 (`ALBUM_ACTUALIZADO`).
+
+Cada foto admite reacciones (❤️ 😂 🔥 😮 👏, una de cada por persona) y
+comentarios de hasta 300 caracteres; un comentario lo borra quien lo escribió o
+quien organiza. Todo se refresca en vivo (`FOTO_CONVERSACION`), y un comentario
+nuevo avisa a quien subió la foto.
 
 Las rutas de bloques de horario son otra cosa: allí el `{usuarioId}` de la ruta debe coincidir con el del token; si no, responde
 `403`. Es un resto de cuando el módulo se probaba sin autenticación y está
