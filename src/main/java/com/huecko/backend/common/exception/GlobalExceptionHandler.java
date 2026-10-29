@@ -1,5 +1,6 @@
 package com.huecko.backend.common.exception;
 
+import com.huecko.backend.observabilidad.IdPeticionFiltro;
 import com.huecko.backend.observabilidad.service.RegistroFallos;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -216,6 +217,8 @@ public class GlobalExceptionHandler {
         body.put("timestamp", Instant.now().toString());
         body.put("error", error);
         body.put("mensaje", mensaje);
+        // Para que quien reporta un error pueda dar el id y encontrar sus líneas del log.
+        body.put("idPeticion", IdPeticionFiltro.actual());
         return ResponseEntity.status(status).body(body);
     }
 }

@@ -62,6 +62,11 @@ springdoc:
 # El frontend consulta `${VITE_API_URL}/actuator/health`, y VITE_API_URL es
 # `/api`. Sin mover la base de actuator, esa comprobación daría 404.
 management:
+  # p50 y p95 de cada endpoint para el panel de métricas (MetricasService).
+  metrics:
+    distribution:
+      percentiles:
+        http.server.requests: 0.5, 0.95
   endpoints:
     web:
       base-path: /api/actuator
@@ -141,5 +146,8 @@ huecko:
     dias-purga: 7
 
 logging:
+  # Cada línea lleva el id de su petición (IdPeticionFiltro): `INFO [k3x9…]`.
+  pattern:
+    level: "%5p [%X{idPeticion:--}]"
   level:
     com.huecko.backend: DEBUG

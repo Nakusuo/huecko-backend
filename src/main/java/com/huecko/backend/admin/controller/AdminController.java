@@ -12,6 +12,7 @@ import com.huecko.backend.observabilidad.dto.SaludResponse;
 import com.huecko.backend.observabilidad.service.BufferLogs;
 import com.huecko.backend.observabilidad.service.ConfiguracionVisible;
 import com.huecko.backend.observabilidad.service.RegistroFallos;
+import com.huecko.backend.observabilidad.service.MetricasService;
 import com.huecko.backend.observabilidad.service.SaludService;
 import com.huecko.backend.reporte.dto.FalloResponse;
 import com.huecko.backend.reporte.dto.ReporteRequests;
@@ -44,6 +45,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final SaludService saludService;
+    private final MetricasService metricasService;
     private final RegistroFallos registroFallos;
     private final ReporteService reporteService;
     private final BufferLogs bufferLogs;
@@ -76,6 +78,12 @@ public class AdminController {
     @GetMapping("/salud")
     public ResponseEntity<SaludResponse> salud() {
         return ResponseEntity.ok(saludService.salud());
+    }
+
+    /** Peticiones, errores y tiempos de respuesta de la API (últimos 30 minutos). */
+    @GetMapping("/metricas")
+    public ResponseEntity<MetricasService.MetricasResponse> metricas() {
+        return ResponseEntity.ok(metricasService.metricas());
     }
 
     /* ------------------------------ Fallos ------------------------------ */
