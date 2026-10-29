@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -25,6 +26,8 @@ public class AuthService {
 
     public static final String CUENTA_SUSPENDIDA = "Tu cuenta está suspendida. Contacta con la administración de Huecko.";
 
+    public static final String DESAFIO_CADUCADO = "Pasó demasiado tiempo. Vuelve a escribir tu contraseña.";
+
     /**
      * BCrypt solo usa los primeros 72 bytes: dos contraseñas largas que
      * empiezan igual serían la misma. Se corta en el registro, antes de cifrar.
@@ -34,6 +37,7 @@ public class AuthService {
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final DosPasosService dosPasosService;
 
     /**
      * Hash de una contraseña al azar, generado con el mismo encoder la primera
@@ -90,6 +94,36 @@ public class AuthService {
             throw new ForbiddenException(CUENTA_SUSPENDIDA);
         }
 
+        // Con la verificación en dos pasos, la contraseña sola no abre sesión:
+        // se responde un desafío y falta el código de la app.
+        if (usuario.isDosPasosActivo()) {
+            return AuthResponse.pedirCodigo(jwtService.generarDesafio(usuario.getId()));
+        }
+
+        return responder(usuario);
+    }
+
+    /** De quién es un desafío vigente. Va antes del límite de intentos, que se lleva por cuenta. */
+    public UUID usuarioDelDesafio(String desafio) {
+        return jwtService.validarDesafio(desafio)
+                .orElseThrow(() -> new BusinessException(DESAFIO_CADUCADO));
+    }
+
+    /** Segundo paso del login: el código de la app o uno de respaldo. */
+    @Transactional
+    public AuthResponse completarDosPasos(UUID usuarioId, String codigo, Instant ahora) {
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new BusinessException(DESAFIO_CADUCADO));
+        // Pudo suspenderse o quitar la verificación en los minutos del desafío.
+        if (usuario.isSuspendido()) {
+            throw new ForbiddenException(CUENTA_SUSPENDIDA);
+        }
+        if (!usuario.isDosPasosActivo()) {
+            throw new BusinessException(DESAFIO_CADUCADO);
+        }
+        if (!dosPasosService.comprobar(usuario, codigo, ahora)) {
+            throw new BusinessException(DosPasosService.CODIGO_INCORRECTO);
+        }
         return responder(usuario);
     }
 

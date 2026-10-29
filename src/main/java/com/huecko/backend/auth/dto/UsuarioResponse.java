@@ -24,7 +24,9 @@ public record UsuarioResponse(
         String bio,
         List<String> intereses,
         /** Nulo si no tiene foto; si no, sirve de versión para no pedirla dos veces. */
-        Instant fotoActualizadaEn
+        Instant fotoActualizadaEn,
+        /** Si al entrar se le pide el código de la app (verificación en dos pasos). */
+        boolean dosPasosActivo
 ) {
     public static UsuarioResponse from(Usuario usuario) {
         return new UsuarioResponse(
@@ -37,6 +39,7 @@ public record UsuarioResponse(
                 usuario.getCiclo(),
                 usuario.getBio(),
                 List.copyOf(usuario.getIntereses() == null ? List.of() : usuario.getIntereses()),
-                usuario.getFotoActualizadaEn());
+                usuario.getFotoActualizadaEn(),
+                usuario.isDosPasosActivo());
     }
 }
