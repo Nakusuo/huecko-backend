@@ -90,6 +90,24 @@ public class Usuario {
     @Column(name = "libre_nota", length = 60)
     private String libreNota;
 
+    /* Verificación en dos pasos (DosPasosService). */
+
+    /** Secreto TOTP cifrado. Existe desde que se empieza a configurar; cuenta solo si `dosPasosActivo`. */
+    @Column(name = "dos_pasos_secreto", length = 200)
+    private String dosPasosSecreto;
+
+    @Column(name = "dos_pasos_activo", nullable = false)
+    @ColumnDefault("false")
+    @Builder.Default
+    private boolean dosPasosActivo = false;
+
+    /** Último intervalo de 30 s aceptado: el mismo código no sirve dos veces. */
+    @Column(name = "dos_pasos_ultimo_paso")
+    private Long dosPasosUltimoPaso;
+
+    @Column(name = "dos_pasos_activado_en")
+    private Instant dosPasosActivadoEn;
+
     @PrePersist
     void prePersist() {
         if (creadoEn == null) {

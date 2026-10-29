@@ -20,7 +20,7 @@ class AuthServiceSuspensionTest {
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
     private final UsuarioRepository repo = mock(UsuarioRepository.class);
-    private final AuthService auth = new AuthService(repo, encoder, mock(JwtService.class));
+    private final AuthService auth = new AuthService(repo, encoder, mock(JwtService.class), mock(DosPasosService.class));
 
     private void cuentaSuspendida() {
         Usuario ana = Usuario.builder().id(UUID.randomUUID()).nombre("Ana").email("ana@h.com")

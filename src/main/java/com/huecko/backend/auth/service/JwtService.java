@@ -28,6 +28,11 @@ public class JwtService {
     /** Prefijo de la clave de desarrollo que está publicada en el repositorio. */
     private static final String PREFIJO_CLAVE_DE_DESARROLLO = "cambia-esta-clave";
 
+    /** Solo lo llevan los desafíos de dos pasos; un token de sesión no tiene `tipo`. */
+    private static final String CLAIM_TIPO = "tipo";
+    private static final String TIPO_DESAFIO = "dos-pasos";
+    static final java.time.Duration DURACION_DESAFIO = java.time.Duration.ofMinutes(5);
+
     private final SecretKey key;
     private final long expirationMinutes;
 
@@ -72,6 +77,35 @@ public class JwtService {
     }
 
     /**
+     * Desafío de la verificación en dos pasos: prueba que la contraseña fue
+     * correcta y vale unos minutos para mandar el código. No abre sesión
+     * (`validar` lo rechaza).
+     */
+    public String generarDesafio(UUID usuarioId) {
+        Instant ahora = Instant.now();
+        return Jwts.builder()
+                .subject(usuarioId.toString())
+                .claim(CLAIM_TIPO, TIPO_DESAFIO)
+                .issuedAt(Date.from(ahora))
+                .expiration(Date.from(ahora.plus(DURACION_DESAFIO)))
+                .signWith(key)
+                .compact();
+    }
+
+    /** El usuario de un desafío vigente; vacío si caducó, está alterado o no es un desafío. */
+    public Optional<UUID> validarDesafio(String desafio) {
+        try {
+            Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(desafio).getPayload();
+            if (!TIPO_DESAFIO.equals(claims.get(CLAIM_TIPO, String.class))) {
+                return Optional.empty();
+            }
+            return Optional.of(UUID.fromString(claims.getSubject()));
+        } catch (JwtException | IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Devuelve la identidad si el token es válido y no ha caducado.
      * Un token corrupto, caducado o firmado con otra clave devuelve vacío: es
      * un caso esperado (401), no una excepción que deba propagarse.
@@ -83,6 +117,12 @@ public class JwtService {
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
+
+            // Un desafío de dos pasos está firmado con la misma clave, pero no
+            // es una sesión: solo dice que la contraseña fue correcta.
+            if (claims.get(CLAIM_TIPO) != null) {
+                return Optional.empty();
+            }
 
             return Optional.of(new UsuarioAutenticado(
                     UUID.fromString(claims.getSubject()),

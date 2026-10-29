@@ -1,6 +1,7 @@
 package com.huecko.backend.auth.controller;
 
 import com.huecko.backend.auth.dto.AuthResponse;
+import com.huecko.backend.auth.dto.DosPasosLoginRequest;
 import com.huecko.backend.auth.dto.LoginRequest;
 import com.huecko.backend.auth.dto.RegisterRequest;
 import com.huecko.backend.auth.service.AuthService;
@@ -18,8 +19,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.UUID;
 
-/** Rutas públicas: son las dos únicas que no exigen JWT, por eso llevan límite de intentos. */
+/** Rutas públicas: son las únicas que no exigen JWT, por eso llevan límite de intentos. */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -38,6 +40,23 @@ public class AuthController {
         } catch (BusinessException credencialesIncorrectas) {
             proteccion.loginFallido(request.email(), Instant.now());
             throw credencialesIncorrectas;
+        }
+    }
+
+    /** Segundo paso del login con verificación en dos pasos: `{ desafio, codigo }` → `{ token, user }`. */
+    @PostMapping("/dos-pasos")
+    public ResponseEntity<AuthResponse> dosPasos(@Valid @RequestBody DosPasosLoginRequest request,
+                                                 HttpServletRequest http) {
+        Instant ahora = Instant.now();
+        UUID usuarioId = authService.usuarioDelDesafio(request.desafio());
+        proteccion.antesDeCodigo(IpCliente.de(http), usuarioId, ahora);
+        try {
+            AuthResponse respuesta = authService.completarDosPasos(usuarioId, request.codigo(), ahora);
+            proteccion.codigoCorrecto(usuarioId);
+            return ResponseEntity.ok(respuesta);
+        } catch (BusinessException codigoIncorrecto) {
+            proteccion.codigoFallido(usuarioId, ahora);
+            throw codigoIncorrecto;
         }
     }
 

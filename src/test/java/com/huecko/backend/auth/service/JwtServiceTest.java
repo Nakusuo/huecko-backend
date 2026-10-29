@@ -58,4 +58,22 @@ class JwtServiceTest {
 
         assertThat(jwtService.validar(token).orElseThrow().rolSistema()).isEqualTo(RolSistema.USUARIO);
     }
+
+    @Test
+    @DisplayName("un desafío de dos pasos no sirve como sesión")
+    void desafioNoEsSesion() {
+        UUID id = UUID.randomUUID();
+        String desafio = jwtService.generarDesafio(id);
+
+        assertThat(jwtService.validar(desafio)).isEmpty();
+        assertThat(jwtService.validarDesafio(desafio)).contains(id);
+    }
+
+    @Test
+    @DisplayName("un token de sesión no sirve como desafío")
+    void sesionNoEsDesafio() {
+        String token = jwtService.generar(UUID.randomUUID(), "ana@h.com", "Ana", RolSistema.USUARIO);
+
+        assertThat(jwtService.validarDesafio(token)).isEmpty();
+    }
 }
