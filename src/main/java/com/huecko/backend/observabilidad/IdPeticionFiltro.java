@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -36,6 +38,9 @@ public class IdPeticionFiltro extends OncePerRequestFilter {
     private static final String ALFABETO = "abcdefghijkmnpqrstuvwxyz23456789";
     private static final int LARGO = 12;
     private static final SecureRandom AZAR = new SecureRandom();
+    /** A partir de aquí una petición se marca como lenta en el log. */
+    static final long LENTA_MS = 2000;
+    private static final Logger log = LoggerFactory.getLogger(IdPeticionFiltro.class);
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain cadena)
@@ -44,10 +49,29 @@ public class IdPeticionFiltro extends OncePerRequestFilter {
         String id = recibido != null && VALIDO.matcher(recibido).matches() ? recibido : nuevo();
         MDC.put(CLAVE_MDC, id);
         response.setHeader(CABECERA, id);
+        long inicio = System.nanoTime();
         try {
             cadena.doFilter(request, response);
         } finally {
+            registrar(request, response.getStatus(), (System.nanoTime() - inicio) / 1_000_000);
             MDC.remove(CLAVE_MDC);
+        }
+    }
+
+    /**
+     * Una línea por petición: `GET /api/grupos → 200 (12 ms)`. En DEBUG lo
+     * normal; en WARN los errores del servidor y las lentas, que así llegan a
+     * la consola del panel con su id.
+     */
+    private static void registrar(HttpServletRequest request, int estado, long ms) {
+        String ruta = request.getRequestURI();
+        if (ruta.startsWith("/api/actuator")) {
+            return;
+        }
+        if (estado >= 500 || ms >= LENTA_MS) {
+            log.warn("{} {} → {} ({} ms){}", request.getMethod(), ruta, estado, ms, ms >= LENTA_MS ? " lenta" : "");
+        } else if (log.isDebugEnabled()) {
+            log.debug("{} {} → {} ({} ms)", request.getMethod(), ruta, estado, ms);
         }
     }
 
