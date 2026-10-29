@@ -123,11 +123,14 @@ public class MetricasService {
                     List<Timer> grupo = e.getValue();
                     long peticiones = grupo.stream().mapToLong(Timer::count).sum();
                     double tiempo = grupo.stream().mapToDouble(t -> t.totalTime(TimeUnit.MILLISECONDS)).sum();
+                    double max = grupo.stream().mapToDouble(t -> t.max(TimeUnit.MILLISECONDS)).max().orElse(0);
+                    // El p95 de Micrometer es aproximado: con pocas peticiones puede pasar del máximo real.
+                    double p95 = Math.min(max, grupo.stream().mapToDouble(MetricasService::p95).max().orElse(0));
                     return new Ruta(e.getKey().metodo(), e.getKey().uri(), peticiones,
                             grupo.stream().filter(MetricasService::esErrorServidor).mapToLong(Timer::count).sum(),
                             peticiones == 0 ? 0 : redondear(tiempo / peticiones),
-                            redondear(grupo.stream().mapToDouble(MetricasService::p95).max().orElse(0)),
-                            redondear(grupo.stream().mapToDouble(t -> t.max(TimeUnit.MILLISECONDS)).max().orElse(0)));
+                            redondear(p95),
+                            redondear(max));
                 })
                 .filter(r -> r.peticiones() > 0)
                 .sorted(Comparator.comparingLong(Ruta::peticiones).reversed())
