@@ -51,6 +51,9 @@ public class FalloRegistrado {
     /** Navegador de la última vez (solo CLIENTE). */
     private String navegador;
 
+    /** `X-Request-Id` de la última vez (solo SERVIDOR): lleva a sus líneas del log. */
+    private String idPeticion;
+
     private long ocurrencias;
 
     private Instant primeraVez;

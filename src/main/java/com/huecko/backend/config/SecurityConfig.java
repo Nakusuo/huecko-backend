@@ -1,5 +1,6 @@
 package com.huecko.backend.config;
 
+import com.huecko.backend.observabilidad.IdPeticionFiltro;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huecko.backend.auth.service.JwtAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
@@ -109,6 +110,8 @@ public class SecurityConfig {
         config.setAllowCredentials(true);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        // Sin esto el navegador no deja leer la cabecera desde otro dominio.
+        config.setExposedHeaders(List.of(IdPeticionFiltro.CABECERA));
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -123,6 +126,7 @@ public class SecurityConfig {
         body.put("timestamp", Instant.now().toString());
         body.put("error", error);
         body.put("mensaje", mensaje);
+        body.put("idPeticion", IdPeticionFiltro.actual());
 
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
