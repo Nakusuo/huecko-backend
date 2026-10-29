@@ -1,5 +1,6 @@
 package com.huecko.backend.observabilidad.service;
 
+import com.huecko.backend.observabilidad.IdPeticionFiltro;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Las últimas líneas del log, en memoria, para la consola del panel.
@@ -33,7 +35,7 @@ public class BufferLogs extends AppenderBase<ILoggingEvent> {
 
     /** `id` crece siempre: el panel pide «lo posterior a X» y nunca recibe una línea dos veces. */
     public record Evento(long id, Instant momento, String nivel, String logger, String hilo, String mensaje,
-                         String excepcion) {
+                         String excepcion, String idPeticion) {
     }
 
     /** `ultimoId` es desde dónde pedir la próxima vez, haya llegado algo o no. */
@@ -68,14 +70,15 @@ public class BufferLogs extends AppenderBase<ILoggingEvent> {
         Evento linea = new Evento(0, Instant.ofEpochMilli(evento.getTimeStamp()), evento.getLevel().toString(),
                 nombre.substring(nombre.lastIndexOf('.') + 1), evento.getThreadName(),
                 RegistroFallos.recortar(evento.getFormattedMessage(), MAX_MENSAJE),
-                excepcion(evento.getThrowableProxy()));
+                excepcion(evento.getThrowableProxy()),
+                idPeticion(evento));
         synchronized (eventos) {
             if (eventos.size() == CAPACIDAD) {
                 eventos.pollFirst();
             }
             secuencia++;
             eventos.addLast(new Evento(secuencia, linea.momento(), linea.nivel(), linea.logger(), linea.hilo(),
-                    linea.mensaje(), linea.excepcion()));
+                    linea.mensaje(), linea.excepcion(), linea.idPeticion()));
         }
     }
 
@@ -97,6 +100,16 @@ public class BufferLogs extends AppenderBase<ILoggingEvent> {
                     ? nuevos.subList(nuevos.size() - MAX_POR_PAGINA, nuevos.size())
                     : nuevos;
             return new Pagina(pagina, secuencia, CAPACIDAD);
+        }
+    }
+
+    /** Un evento creado fuera de Logback (pruebas) puede no traer MDC. */
+    private static String idPeticion(ILoggingEvent evento) {
+        try {
+            Map<String, String> mdc = evento.getMDCPropertyMap();
+            return mdc == null ? null : mdc.get(IdPeticionFiltro.CLAVE_MDC);
+        } catch (RuntimeException sinMdc) {
+            return null;
         }
     }
 

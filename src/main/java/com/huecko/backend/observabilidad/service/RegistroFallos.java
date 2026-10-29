@@ -1,5 +1,6 @@
 package com.huecko.backend.observabilidad.service;
 
+import com.huecko.backend.observabilidad.IdPeticionFiltro;
 import com.huecko.backend.common.exception.NotFoundException;
 import com.huecko.backend.mongo.document.EstadoRevision;
 import com.huecko.backend.mongo.document.FalloRegistrado;
@@ -102,6 +103,7 @@ public class RegistroFallos {
                     .set("mensaje", mensaje)
                     .set("traza", traza)
                     .set("navegador", navegador)
+                    .set("idPeticion", IdPeticionFiltro.actual())
                     .setOnInsert("origen", origen)
                     .setOnInsert("tipo", tipo)
                     .setOnInsert("ubicacion", ubicacion)

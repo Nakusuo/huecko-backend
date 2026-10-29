@@ -116,6 +116,7 @@ ellos. Lo que ve en `/api/admin/**`:
 | Ruta | Qué da |
 | --- | --- |
 | `GET /resumen` | Cifras agregadas de uso (sin nombres ni agendas). |
+| `GET /metricas` | Peticiones, errores 4xx/5xx y tiempo de respuesta de los últimos 30 min (cada 10 s), los endpoints más usados con su p95, y memoria/CPU/hilos. Sale del timer `http.server.requests` de Micrometer. |
 | `GET /salud` | PostgreSQL, MongoDB y tiempo real, con latencia; las tareas programadas (última pasada, fallos, elementos atrasados); versión, memoria y tiempo encendido. |
 | `GET /fallos`, `PATCH /fallos/{id}/estado` | Errores 500, de tareas y del navegador, agrupados por huella (tipo + lugar + línea), con su número de ocurrencias. Si uno resuelto reaparece, se reabre. |
 | `GET /reportes`, `PATCH /reportes/{id}/estado` | Lo que las personas envían desde «Reportar un problema». |
@@ -221,7 +222,10 @@ del frontend a `HUECKO_CORS_ORIGINS`.
 | Método | Ruta | Autenticación |
 | --- | --- | --- |
 | `POST` | `/api/auth/register` | pública |
-| `POST` | `/api/auth/login` | pública |
+| `POST` | `/api/auth/login` (con dos pasos activos responde `{requiereDosPasos, desafio}`) | pública |
+| `POST` | `/api/auth/dos-pasos` (`{desafio, codigo}` → `{token, user}`) | pública |
+| `GET` | `/api/me/dos-pasos` (estado y códigos de respaldo que quedan) | JWT |
+| `POST` | `/api/me/dos-pasos/iniciar` · `/activar` · `/codigos-respaldo` · `/desactivar` | JWT |
 | `GET` `PATCH` | `/api/me` | JWT |
 | `PUT` | `/api/me/perfil` (carrera, ciclo, frase e intereses) | JWT |
 | `PUT` `DELETE` | `/api/me/foto` (multipart, campo `foto`) | JWT |
@@ -302,8 +306,31 @@ previsto que desaparezca de la URL.
 Toda respuesta de error, incluidas las de Spring Security, sale igual:
 
 ```json
-{ "timestamp": "2026-09-04T18:20:11Z", "error": "Solicitud inválida", "mensaje": "horaFin debe ser posterior a horaInicio" }
+{ "timestamp": "2026-09-04T18:20:11Z", "error": "Solicitud inválida", "mensaje": "horaFin debe ser posterior a horaInicio", "idPeticion": "k3x9m2p7q4hz" }
 ```
+
+`idPeticion` es también la cabecera `X-Request-Id` de la respuesta y aparece en
+cada línea del log de esa petición (`INFO [k3x9m2p7q4hz] …`). Con él, un error
+que reporta alguien lleva a sus líneas exactas en la consola del panel.
+
+#### Verificación en dos pasos
+
+Opcional por cuenta, con cualquier app TOTP (Google Authenticator, Microsoft
+Authenticator, Authy): RFC 6238, 6 dígitos cada 30 s, implementado en
+`auth/service/Totp.java` sin dependencias.
+
+1. `POST /api/me/dos-pasos/iniciar` → `{secreto, uri}`; el frontend dibuja el
+   QR de `uri` (`otpauth://…`).
+2. `POST /api/me/dos-pasos/activar {codigo}` → 10 códigos de respaldo de un solo
+   uso, que solo se ven esa vez.
+3. Desde entonces, `/api/auth/login` responde un **desafío** (un JWT de 5
+   minutos que no sirve como sesión) y `/api/auth/dos-pasos` lo cambia por el
+   token con el código de la app o uno de respaldo.
+
+El secreto se guarda cifrado (AES-256-GCM, clave derivada de
+`HUECKO_JWT_SECRET`) y los códigos de respaldo como SHA-256. Un código ya usado
+no vale otra vez, y hay como mucho 5 códigos fallidos por cuenta cada 15
+minutos. Desactivarla pide la contraseña y un código.
 
 ### Servicio de IA (opcional)
 
